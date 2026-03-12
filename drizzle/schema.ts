@@ -25,4 +25,21 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
+export const dnsTestResults = mysqlTable("dnsTestResults", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  domain: varchar("domain", { length: 255 }).notNull(),
+  googleDns: int("googleDns"), // milliseconds
+  cloudflareDns: int("cloudflareDns"),
+  openDns: int("openDns"),
+  quad9Dns: int("quad9Dns"),
+  adguardDns: int("adguardDns"),
+  status: mysqlEnum("status", ["success", "error"]).notNull(),
+  errorMessage: text("errorMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type DnsTestResult = typeof dnsTestResults.$inferSelect;
+export type InsertDnsTestResult = typeof dnsTestResults.$inferInsert;
+
 // TODO: Add your tables here
