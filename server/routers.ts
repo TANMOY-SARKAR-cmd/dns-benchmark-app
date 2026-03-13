@@ -4,6 +4,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { testDomains, DNS_PROVIDERS } from "./dns";
 import { getDnsProxyConfig, updateDnsProxyConfig, getDnsQueryLogs, getQueryStatsSummary } from "./dnsProxyDb";
+import { getDnsProxy } from "./dnsProxy";
 import { z } from "zod";
 
 export const appRouter = router({
@@ -63,7 +64,20 @@ export const appRouter = router({
       )
       .mutation(async ({ ctx, input }) => {
         if (!ctx.user) throw new Error("Unauthorized");
-        return updateDnsProxyConfig(ctx.user.id, input);
+        const config = await updateDnsProxyConfig(ctx.user.id, input);
+        const proxy = getDnsProxy();
+        if (config.isEnabled === 1) {
+          if (config.fastestProvider) {
+            proxy['config'].fastestProvider = config.fastestProvider;
+          }
+          if (config.cacheTtl) {
+             proxy['config'].cacheTtl = config.cacheTtl;
+          }
+          await proxy.start().catch(console.error);
+        } else {
+          await proxy.stop();
+        }
+        return config;
       }),
 
     getQueryLogs: protectedProcedure
