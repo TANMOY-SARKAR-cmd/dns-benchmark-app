@@ -125,39 +125,39 @@ export async function getQueryStatsSummary(userId: number) {
 
   const logs = await db.select().from(dnsQueryLog).where(eq(dnsQueryLog.userId, userId));
 
-  const summary = {
-    totalQueries: logs.length,
-    cachedQueries: logs.filter(l => l.cachedResult === 1).length,
-    failedQueries: logs.filter(l => l.status === 'error').length,
-    successQueries: logs.filter(l => l.status === 'success').length,
-    averageResolutionTime: 0,
-    mostUsedProvider: '',
-    cacheHitRate: 0,
-  };
+  let cachedQueries = 0;
+  let failedQueries = 0;
+  let successQueries = 0;
+  let totalResolutionTime = 0;
+  let resolutionTimeCount = 0;
+  const providerCounts: Record<string, number> = {};
 
-  // Calculate average resolution time
-  const timings = logs
-    .filter(l => l.resolutionTime !== null)
-    .map(l => l.resolutionTime as number);
-  
-  if (timings.length > 0) {
-    summary.averageResolutionTime = Math.round(timings.reduce((a, b) => a + b, 0) / timings.length);
+  for (const log of logs) {
+    if (log.cachedResult === 1) cachedQueries++;
+    if (log.status === 'error') failedQueries++;
+    if (log.status === 'success') successQueries++;
+
+    if (log.resolutionTime !== null) {
+      totalResolutionTime += log.resolutionTime;
+      resolutionTimeCount++;
+    }
+
+    providerCounts[log.provider] = (providerCounts[log.provider] || 0) + 1;
   }
 
-  // Find most used provider
-  const providerCounts: Record<string, number> = {};
-  logs.forEach(log => {
-    providerCounts[log.provider] = (providerCounts[log.provider] || 0) + 1;
-  });
-  
+  const summary = {
+    totalQueries: logs.length,
+    cachedQueries,
+    failedQueries,
+    successQueries,
+    averageResolutionTime: resolutionTimeCount > 0 ? Math.round(totalResolutionTime / resolutionTimeCount) : 0,
+    mostUsedProvider: '',
+    cacheHitRate: logs.length > 0 ? Math.round((cachedQueries / logs.length) * 100) : 0,
+  };
+
   const mostUsed = Object.entries(providerCounts).sort((a, b) => b[1] - a[1])[0];
   if (mostUsed) {
     summary.mostUsedProvider = mostUsed[0];
-  }
-
-  // Calculate cache hit rate
-  if (summary.totalQueries > 0) {
-    summary.cacheHitRate = Math.round((summary.cachedQueries / summary.totalQueries) * 100);
   }
 
   return summary;
