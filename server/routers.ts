@@ -3,8 +3,10 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { testDomains, DNS_PROVIDERS } from "./dns";
-import { getDnsProxyConfig, updateDnsProxyConfig, getDnsQueryLogs, getQueryStatsSummary } from "./dnsProxyDb";
 import { getDnsProxy } from "./dnsProxy";
+import { getDnsQueryLogs } from "./services/queryLogger";
+import { getProxyStats } from "./services/proxyStats";
+import { supabase } from "./supabaseClient";
 import { z } from "zod";
 
 export const appRouter = router({
@@ -49,12 +51,22 @@ export const appRouter = router({
   }),
 
   proxy: router({
-    getConfig: protectedProcedure.query(async ({ ctx }) => {
-      if (!ctx.user) throw new Error("Unauthorized");
-      return getDnsProxyConfig(ctx.user.id);
+    getConfig: publicProcedure.query(async () => {
+      const { data, error } = await supabase
+        .from('proxy_config')
+        .select('*')
+        .eq('user_id', 'default')
+        .limit(1)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        throw new Error('Failed to get proxy config');
+      }
+
+      return data || { is_enabled: 0, fastest_provider: 'Google DNS', proxy_port: 53 };
     }),
 
-    updateConfig: protectedProcedure
+    updateConfig: publicProcedure
       .input(
         z.object({
           isEnabled: z.number().optional(),
@@ -62,16 +74,30 @@ export const appRouter = router({
           cacheTtl: z.number().optional(),
         })
       )
-      .mutation(async ({ ctx, input }) => {
-        if (!ctx.user) throw new Error("Unauthorized");
-        const config = await updateDnsProxyConfig(ctx.user.id, input);
+      .mutation(async ({ input }) => {
+        const updateData: any = { updated_at: new Date().toISOString() };
+        if (input.isEnabled !== undefined) updateData.is_enabled = input.isEnabled;
+        if (input.fastestProvider !== undefined) updateData.fastest_provider = input.fastestProvider;
+        if (input.cacheTtl !== undefined) updateData.cache_ttl = input.cacheTtl;
+
+        const { data: config, error } = await supabase
+          .from('proxy_config')
+          .update(updateData)
+          .eq('user_id', 'default')
+          .select()
+          .single();
+
+        if (error || !config) {
+          throw new Error('Failed to update config');
+        }
+
         const proxy = getDnsProxy();
-        if (config.isEnabled === 1) {
-          if (config.fastestProvider) {
-            proxy.config.fastestProvider = config.fastestProvider;
+        if (config.is_enabled === 1) {
+          if (config.fastest_provider) {
+            proxy.config.fastestProvider = config.fastest_provider;
           }
-          if (config.cacheTtl) {
-             proxy.config.cacheTtl = config.cacheTtl;
+          if (config.cache_ttl) {
+             proxy.config.cacheTtl = config.cache_ttl;
           }
           await proxy.start().catch(console.error);
         } else {
@@ -80,16 +106,27 @@ export const appRouter = router({
         return config;
       }),
 
-    getQueryLogs: protectedProcedure
+    getQueryLogs: publicProcedure
       .input(z.object({ limit: z.number().default(100) }))
-      .query(async ({ ctx, input }) => {
-        if (!ctx.user) throw new Error("Unauthorized");
-        return getDnsQueryLogs(ctx.user.id, input.limit);
+      .query(async ({ input }) => {
+        return getDnsQueryLogs('default', input.limit);
       }),
 
-    getStats: protectedProcedure.query(async ({ ctx }) => {
-      if (!ctx.user) throw new Error("Unauthorized");
-      return getQueryStatsSummary(ctx.user.id);
+    getStats: publicProcedure.query(async () => {
+      const dbStats = await getProxyStats('default');
+
+      // Calculate derived stats like cache hit rate
+      const total = dbStats?.total_queries || 0;
+      const hits = dbStats?.cache_hits || 0;
+      const hitRate = total > 0 ? Math.round((hits / total) * 100) : 0;
+
+      return {
+        totalQueries: total,
+        cachedQueries: hits,
+        cacheHitRate: hitRate,
+        mostUsedProvider: dbStats?.active_provider || 'Google DNS',
+        averageResolutionTime: 0 // Will need a separate query to compute avg latency from dns_queries if desired, or can be added to proxyStats
+      };
     }),
   }),
 });

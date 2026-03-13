@@ -1,6 +1,9 @@
 import dgram from 'dgram';
 import dnsPacket from 'dns-packet';
 import { DNS_PROVIDERS, testDomains } from './dns';
+import { logDnsQuery } from './services/queryLogger';
+import { incrementProxyStat } from './services/proxyStats';
+import { logBenchmarkResult } from './services/benchmarkLogger';
 
 interface DnsCache {
   [key: string]: {
@@ -96,15 +99,32 @@ export class DnsProxyServer {
 
       const cacheKey = domain && type ? `${domain}:${type}` : null;
 
-      if (cacheKey) {
+      // Log total query attempt
+      incrementProxyStat('default', 'total', this.config.fastestProvider);
+
+      if (cacheKey && domain) {
         // Check cache first
         const cached = this.getFromCache(cacheKey);
         if (cached) {
           this.queryStats.cached++;
+          incrementProxyStat('default', 'cache_hit');
+
+          // Log to Supabase
+          logDnsQuery({
+            userId: 'default',
+            domain,
+            recordType: type,
+            clientIp: rinfo.address,
+            upstreamProvider: this.config.fastestProvider,
+            latencyMs: 0,
+            cached: true,
+            status: 'success'
+          });
+
           // We need to update the transaction ID of the cached response to match the request
-        // The first 2 bytes of a DNS packet are the transaction ID
-        const responseBuffer = Buffer.from(cached);
-        responseBuffer.writeUInt16BE(packet.id || 0, 0);
+          // The first 2 bytes of a DNS packet are the transaction ID
+          const responseBuffer = Buffer.from(cached);
+          responseBuffer.writeUInt16BE(packet.id || 0, 0);
 
           this.server?.send(responseBuffer, 0, responseBuffer.length, rinfo.port, rinfo.address);
           return;
@@ -112,7 +132,8 @@ export class DnsProxyServer {
       }
 
       // Query the fastest provider
-      await this.queryFastestProvider(msg, rinfo, cacheKey);
+      incrementProxyStat('default', 'cache_miss');
+      await this.queryFastestProvider(msg, rinfo, cacheKey, domain, type);
       
       this.queryStats.total++;
     } catch (error) {
@@ -124,7 +145,7 @@ export class DnsProxyServer {
   /**
    * Query the fastest DNS provider via raw UDP
    */
-  private queryFastestProvider(msg: Buffer, clientRinfo: dgram.RemoteInfo, cacheKey: string | null): Promise<void> {
+  private queryFastestProvider(msg: Buffer, clientRinfo: dgram.RemoteInfo, cacheKey: string | null, domain: string | null, type: string | null): Promise<void> {
     return new Promise((resolve) => {
       const providerIp = DNS_PROVIDERS[this.config.fastestProvider as keyof typeof DNS_PROVIDERS];
       
@@ -140,6 +161,17 @@ export class DnsProxyServer {
       // Setup timeout
       const timeout = setTimeout(() => {
         this.sendServfail(msg, clientRinfo);
+        if (domain) {
+          logDnsQuery({
+            userId: 'default',
+            domain,
+            recordType: type || undefined,
+            clientIp: clientRinfo.address,
+            upstreamProvider: this.config.fastestProvider,
+            cached: false,
+            status: 'error'
+          });
+        }
         client.close();
         resolve();
       }, 5000);
@@ -152,7 +184,21 @@ export class DnsProxyServer {
 
         // Calculate resolution time
         const endTime = performance.now();
-        this.queryStats.totalTime += (endTime - startTime);
+        const latencyMs = Math.round(endTime - startTime);
+        this.queryStats.totalTime += latencyMs;
+
+        if (domain) {
+          logDnsQuery({
+            userId: 'default',
+            domain,
+            recordType: type || undefined,
+            clientIp: clientRinfo.address,
+            upstreamProvider: this.config.fastestProvider,
+            latencyMs,
+            cached: false,
+            status: 'success'
+          });
+        }
 
         // Cache the raw response if we have a valid key
         if (cacheKey) {
@@ -167,6 +213,17 @@ export class DnsProxyServer {
         console.error('Upstream DNS query error:', err);
         clearTimeout(timeout);
         this.sendServfail(msg, clientRinfo);
+        if (domain) {
+          logDnsQuery({
+            userId: 'default',
+            domain,
+            recordType: type || undefined,
+            clientIp: clientRinfo.address,
+            upstreamProvider: this.config.fastestProvider,
+            cached: false,
+            status: 'error'
+          });
+        }
         client.close();
         resolve();
       });
@@ -177,6 +234,17 @@ export class DnsProxyServer {
           console.error('Failed to send to upstream DNS:', err);
           clearTimeout(timeout);
           this.sendServfail(msg, clientRinfo);
+          if (domain) {
+            logDnsQuery({
+              userId: 'default',
+              domain,
+              recordType: type || undefined,
+              clientIp: clientRinfo.address,
+              upstreamProvider: this.config.fastestProvider,
+              cached: false,
+              status: 'error'
+            });
+          }
           client.close();
           resolve();
         }
@@ -237,16 +305,32 @@ export class DnsProxyServer {
     let fastestProvider = 'Google DNS';
     let fastestTime = Infinity;
 
-    Object.values(results).forEach((domainResults) => {
+    Object.entries(results).forEach(([domain, domainResults]) => {
       Object.entries(domainResults).forEach(([provider, time]) => {
-        if (typeof time === 'number' && time < fastestTime) {
-          fastestTime = time;
-          fastestProvider = provider;
+        if (typeof time === 'number') {
+           logBenchmarkResult('default', domain, provider, time);
+           if (time < fastestTime) {
+             fastestTime = time;
+             fastestProvider = provider;
+           }
         }
       });
     });
 
     this.config.fastestProvider = fastestProvider;
+
+    // Also save fastest provider to proxy config in Supabase
+    try {
+      import('./supabaseClient').then(({ supabase }) => {
+        supabase.from('proxy_config')
+          .update({ fastest_provider: fastestProvider, updated_at: new Date().toISOString() })
+          .eq('user_id', 'default')
+          .then();
+      });
+    } catch(err) {
+      console.error('Failed to update fastest provider in supabase');
+    }
+
     return fastestProvider;
   }
 
