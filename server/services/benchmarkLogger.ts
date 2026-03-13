@@ -1,4 +1,4 @@
-import { supabase } from '../supabaseClient';
+import { supabase } from "../supabaseClient";
 
 export async function logBenchmarkResult(
   userId: string,
@@ -7,7 +7,7 @@ export async function logBenchmarkResult(
   latencyMs: number
 ) {
   try {
-    const { error } = await supabase.from('benchmark_results').insert({
+    const { error } = await supabase.from("benchmark_results").insert({
       user_id: userId,
       domain,
       provider,
@@ -15,9 +15,9 @@ export async function logBenchmarkResult(
     });
 
     if (error) {
-      console.error('Failed to log benchmark to Supabase:', error);
+      console.error("Failed to log benchmark to Supabase:", error);
     }
   } catch (err) {
-    console.error('Exception logging benchmark:', err);
+    console.error("Exception logging benchmark:", err);
   }
 }

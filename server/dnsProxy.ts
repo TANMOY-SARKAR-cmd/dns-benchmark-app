@@ -1,9 +1,9 @@
-import dgram from 'dgram';
-import dnsPacket from 'dns-packet';
-import { DNS_PROVIDERS, testDomains } from './dns';
-import { logDnsQuery } from './services/queryLogger';
-import { incrementProxyStat } from './services/proxyStats';
-import { logBenchmarkResult } from './services/benchmarkLogger';
+import dgram from "dgram";
+import dnsPacket from "dns-packet";
+import { DNS_PROVIDERS, testDomains } from "./dns";
+import { logDnsQuery } from "./services/queryLogger";
+import { incrementProxyStat } from "./services/proxyStats";
+import { logBenchmarkResult } from "./services/benchmarkLogger";
 
 interface DnsCache {
   [key: string]: {
@@ -37,7 +37,7 @@ export class DnsProxyServer {
     this.config = {
       port: config.port || 53,
       cacheTtl: config.cacheTtl || 3600,
-      fastestProvider: config.fastestProvider || 'Google DNS',
+      fastestProvider: config.fastestProvider || "Google DNS",
     };
   }
 
@@ -46,20 +46,22 @@ export class DnsProxyServer {
    */
   async start(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.server = dgram.createSocket('udp4');
+      this.server = dgram.createSocket("udp4");
 
-      this.server.on('message', (msg, rinfo) => {
+      this.server.on("message", (msg, rinfo) => {
         this.handleDnsQuery(msg, rinfo);
       });
 
-      this.server.on('error', (err) => {
-        console.error('DNS Proxy Server error:', err);
+      this.server.on("error", err => {
+        console.error("DNS Proxy Server error:", err);
         reject(err);
       });
 
       // Bind to localhost only to prevent open resolver abuse
-      this.server.bind(this.config.port, '127.0.0.1', () => {
-        console.log(`DNS Proxy Server listening on 127.0.0.1:${this.config.port}`);
+      this.server.bind(this.config.port, "127.0.0.1", () => {
+        console.log(
+          `DNS Proxy Server listening on 127.0.0.1:${this.config.port}`
+        );
         resolve();
       });
     });
@@ -69,10 +71,10 @@ export class DnsProxyServer {
    * Stop the DNS proxy server
    */
   async stop(): Promise<void> {
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       if (this.server) {
         this.server.close(() => {
-          console.log('DNS Proxy Server stopped');
+          console.log("DNS Proxy Server stopped");
           resolve();
         });
       } else {
@@ -84,41 +86,50 @@ export class DnsProxyServer {
   /**
    * Handle incoming DNS query
    */
-  private async handleDnsQuery(msg: Buffer, rinfo: dgram.RemoteInfo): Promise<void> {
+  private async handleDnsQuery(
+    msg: Buffer,
+    rinfo: dgram.RemoteInfo
+  ): Promise<void> {
     try {
       let packet;
       try {
         packet = dnsPacket.decode(msg);
       } catch (err) {
-        console.error('Failed to decode DNS packet:', err);
+        console.error("Failed to decode DNS packet:", err);
         return;
       }
 
-      const domain = packet.questions && packet.questions[0] ? packet.questions[0].name : null;
-      const type = packet.questions && packet.questions[0] ? packet.questions[0].type : null;
+      const domain =
+        packet.questions && packet.questions[0]
+          ? packet.questions[0].name
+          : null;
+      const type =
+        packet.questions && packet.questions[0]
+          ? packet.questions[0].type
+          : null;
 
       const cacheKey = domain && type ? `${domain}:${type}` : null;
 
       // Log total query attempt
-      incrementProxyStat('default', 'total', this.config.fastestProvider);
+      incrementProxyStat("default", "total", this.config.fastestProvider);
 
       if (cacheKey && domain) {
         // Check cache first
         const cached = this.getFromCache(cacheKey);
         if (cached) {
           this.queryStats.cached++;
-          incrementProxyStat('default', 'cache_hit');
+          incrementProxyStat("default", "cache_hit");
 
           // Log to Supabase
           logDnsQuery({
-            userId: 'default',
+            userId: "default",
             domain,
-            recordType: type,
+            recordType: type || undefined,
             clientIp: rinfo.address,
             upstreamProvider: this.config.fastestProvider,
             latencyMs: 0,
             cached: true,
-            status: 'success'
+            status: "success",
           });
 
           // We need to update the transaction ID of the cached response to match the request
@@ -126,18 +137,24 @@ export class DnsProxyServer {
           const responseBuffer = Buffer.from(cached);
           responseBuffer.writeUInt16BE(packet.id || 0, 0);
 
-          this.server?.send(responseBuffer, 0, responseBuffer.length, rinfo.port, rinfo.address);
+          this.server?.send(
+            responseBuffer,
+            0,
+            responseBuffer.length,
+            rinfo.port,
+            rinfo.address
+          );
           return;
         }
       }
 
       // Query the fastest provider
-      incrementProxyStat('default', 'cache_miss');
+      incrementProxyStat("default", "cache_miss");
       await this.queryFastestProvider(msg, rinfo, cacheKey, domain, type);
-      
+
       this.queryStats.total++;
     } catch (error) {
-      console.error('Error handling DNS query:', error);
+      console.error("Error handling DNS query:", error);
       this.queryStats.failed++;
     }
   }
@@ -145,42 +162,57 @@ export class DnsProxyServer {
   /**
    * Query the fastest DNS provider via raw UDP
    */
-  private queryFastestProvider(msg: Buffer, clientRinfo: dgram.RemoteInfo, cacheKey: string | null, domain: string | null, type: string | null): Promise<void> {
-    return new Promise((resolve) => {
-      const providerIp = DNS_PROVIDERS[this.config.fastestProvider as keyof typeof DNS_PROVIDERS];
-      
+  private queryFastestProvider(
+    msg: Buffer,
+    clientRinfo: dgram.RemoteInfo,
+    cacheKey: string | null,
+    domain: string | null,
+    type: string | null
+  ): Promise<void> {
+    return new Promise(resolve => {
+      const providerIp =
+        DNS_PROVIDERS[
+          this.config.fastestProvider as keyof typeof DNS_PROVIDERS
+        ];
+
       if (!providerIp) {
-        console.error('Provider not found:', this.config.fastestProvider);
+        console.error("Provider not found:", this.config.fastestProvider);
         resolve();
         return;
       }
 
       const startTime = performance.now();
-      const client = dgram.createSocket('udp4');
+      const client = dgram.createSocket("udp4");
 
       // Setup timeout
       const timeout = setTimeout(() => {
         this.sendServfail(msg, clientRinfo);
         if (domain) {
           logDnsQuery({
-            userId: 'default',
+            userId: "default",
             domain,
             recordType: type || undefined,
             clientIp: clientRinfo.address,
             upstreamProvider: this.config.fastestProvider,
             cached: false,
-            status: 'error'
+            status: "error",
           });
         }
         client.close();
         resolve();
       }, 5000);
 
-      client.on('message', (response) => {
+      client.on("message", response => {
         clearTimeout(timeout);
 
         // Send response back to original client
-        this.server?.send(response, 0, response.length, clientRinfo.port, clientRinfo.address);
+        this.server?.send(
+          response,
+          0,
+          response.length,
+          clientRinfo.port,
+          clientRinfo.address
+        );
 
         // Calculate resolution time
         const endTime = performance.now();
@@ -189,39 +221,39 @@ export class DnsProxyServer {
 
         if (domain) {
           logDnsQuery({
-            userId: 'default',
+            userId: "default",
             domain,
             recordType: type || undefined,
             clientIp: clientRinfo.address,
             upstreamProvider: this.config.fastestProvider,
             latencyMs,
             cached: false,
-            status: 'success'
+            status: "success",
           });
         }
 
         // Cache the raw response if we have a valid key
         if (cacheKey) {
-           this.setCache(cacheKey, response);
+          this.setCache(cacheKey, response);
         }
 
         client.close();
         resolve();
       });
 
-      client.on('error', (err) => {
-        console.error('Upstream DNS query error:', err);
+      client.on("error", err => {
+        console.error("Upstream DNS query error:", err);
         clearTimeout(timeout);
         this.sendServfail(msg, clientRinfo);
         if (domain) {
           logDnsQuery({
-            userId: 'default',
+            userId: "default",
             domain,
             recordType: type || undefined,
             clientIp: clientRinfo.address,
             upstreamProvider: this.config.fastestProvider,
             cached: false,
-            status: 'error'
+            status: "error",
           });
         }
         client.close();
@@ -229,20 +261,20 @@ export class DnsProxyServer {
       });
 
       // Send raw buffer to upstream provider
-      client.send(msg, 0, msg.length, 53, providerIp, (err) => {
+      client.send(msg, 0, msg.length, 53, providerIp, err => {
         if (err) {
-          console.error('Failed to send to upstream DNS:', err);
+          console.error("Failed to send to upstream DNS:", err);
           clearTimeout(timeout);
           this.sendServfail(msg, clientRinfo);
           if (domain) {
             logDnsQuery({
-              userId: 'default',
+              userId: "default",
               domain,
               recordType: type || undefined,
               clientIp: clientRinfo.address,
               upstreamProvider: this.config.fastestProvider,
               cached: false,
-              status: 'error'
+              status: "error",
             });
           }
           client.close();
@@ -274,14 +306,20 @@ export class DnsProxyServer {
     try {
       const packet = dnsPacket.decode(requestQuery);
       const response = dnsPacket.encode({
-        type: 'response',
+        type: "response",
         id: packet.id,
         flags: 2, // SERVFAIL
-        questions: packet.questions
+        questions: packet.questions,
       });
-      this.server?.send(response, 0, response.length, clientRinfo.port, clientRinfo.address);
+      this.server?.send(
+        response,
+        0,
+        response.length,
+        clientRinfo.port,
+        clientRinfo.address
+      );
     } catch (err) {
-      console.error('Failed to send SERVFAIL:', err);
+      console.error("Failed to send SERVFAIL:", err);
     }
   }
 
@@ -301,18 +339,18 @@ export class DnsProxyServer {
    */
   async updateFastestProvider(domains: string[]): Promise<string> {
     const results = await testDomains(domains);
-    
-    let fastestProvider = 'Google DNS';
+
+    let fastestProvider = "Google DNS";
     let fastestTime = Infinity;
 
     Object.entries(results).forEach(([domain, domainResults]) => {
       Object.entries(domainResults).forEach(([provider, time]) => {
-        if (typeof time === 'number') {
-           logBenchmarkResult('default', domain, provider, time);
-           if (time < fastestTime) {
-             fastestTime = time;
-             fastestProvider = provider;
-           }
+        if (typeof time === "number") {
+          logBenchmarkResult("default", domain, provider, time);
+          if (time < fastestTime) {
+            fastestTime = time;
+            fastestProvider = provider;
+          }
         }
       });
     });
@@ -321,14 +359,18 @@ export class DnsProxyServer {
 
     // Also save fastest provider to proxy config in Supabase
     try {
-      import('./supabaseClient').then(({ supabase }) => {
-        supabase.from('proxy_config')
-          .update({ fastest_provider: fastestProvider, updated_at: new Date().toISOString() })
-          .eq('user_id', 'default')
+      import("./supabaseClient").then(({ supabase }) => {
+        supabase
+          .from("proxy_config")
+          .update({
+            fastest_provider: fastestProvider,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", "default")
           .then();
       });
-    } catch(err) {
-      console.error('Failed to update fastest provider in supabase');
+    } catch (err) {
+      console.error("Failed to update fastest provider in supabase");
     }
 
     return fastestProvider;
@@ -340,12 +382,14 @@ export class DnsProxyServer {
   getStats() {
     return {
       ...this.queryStats,
-      averageTime: this.queryStats.total > 0 
-        ? Math.round(this.queryStats.totalTime / this.queryStats.total)
-        : 0,
-      cacheHitRate: this.queryStats.total > 0
-        ? Math.round((this.queryStats.cached / this.queryStats.total) * 100)
-        : 0,
+      averageTime:
+        this.queryStats.total > 0
+          ? Math.round(this.queryStats.totalTime / this.queryStats.total)
+          : 0,
+      cacheHitRate:
+        this.queryStats.total > 0
+          ? Math.round((this.queryStats.cached / this.queryStats.total) * 100)
+          : 0,
       fastestProvider: this.config.fastestProvider,
     };
   }
@@ -375,7 +419,9 @@ export function getDnsProxy(): DnsProxyServer {
   return proxyInstance;
 }
 
-export async function startDnsProxy(config?: Partial<ProxyConfig>): Promise<DnsProxyServer> {
+export async function startDnsProxy(
+  config?: Partial<ProxyConfig>
+): Promise<DnsProxyServer> {
   const proxy = new DnsProxyServer(config);
   await proxy.start();
   return proxy;
@@ -384,22 +430,27 @@ export async function startDnsProxy(config?: Partial<ProxyConfig>): Promise<DnsP
 // Global reference for the background interval
 let backgroundBenchmarkInterval: NodeJS.Timeout | null = null;
 
-export function startBackgroundBenchmark(domains: string[] = ['google.com', 'cloudflare.com', 'apple.com'], intervalMs: number = 3600000) {
+export function startBackgroundBenchmark(
+  domains: string[] = ["google.com", "cloudflare.com", "apple.com"],
+  intervalMs: number = 3600000
+) {
   if (backgroundBenchmarkInterval) {
     clearInterval(backgroundBenchmarkInterval);
   }
 
   const runBenchmark = async () => {
     try {
-      console.log('Running background DNS benchmark...');
+      console.log("Running background DNS benchmark...");
       const proxy = getDnsProxy();
       const fastest = await proxy.updateFastestProvider(domains);
-      console.log(`Background benchmark complete. Fastest provider updated to: ${fastest}`);
+      console.log(
+        `Background benchmark complete. Fastest provider updated to: ${fastest}`
+      );
 
       // We would ideally want to update the database for each user as well,
       // but without tying the proxy to a specific user context here, we just update the in-memory proxy config.
     } catch (err) {
-      console.error('Failed to run background benchmark:', err);
+      console.error("Failed to run background benchmark:", err);
     }
   };
 

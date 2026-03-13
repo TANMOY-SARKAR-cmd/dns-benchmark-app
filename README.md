@@ -107,11 +107,13 @@ VITE_SUPABASE_ANON_KEY="your-anon-key"
 ### 3. Running the App
 
 1. Install dependencies:
+
    ```bash
    pnpm install
    ```
 
 2. Start the development server (runs both frontend and backend):
+
    ```bash
    pnpm dev
    ```

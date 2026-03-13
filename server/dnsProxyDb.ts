@@ -1,16 +1,27 @@
-import { eq } from 'drizzle-orm';
-import { dnsProxyConfig, dnsQueryLog, dnsProxyStats, InsertDnsProxyConfig, InsertDnsQueryLog, InsertDnsProxyStats } from '../drizzle/schema';
-import { getDb } from './db';
+import { eq } from "drizzle-orm";
+import {
+  dnsProxyConfig,
+  dnsQueryLog,
+  dnsProxyStats,
+  InsertDnsProxyConfig,
+  InsertDnsQueryLog,
+  InsertDnsProxyStats,
+} from "../drizzle/schema";
+import { getDb } from "./db";
 
 /**
  * Get or create DNS proxy configuration for a user
  */
 export async function getDnsProxyConfig(userId: number) {
   const db = await getDb();
-  if (!db) throw new Error('Database not available');
+  if (!db) throw new Error("Database not available");
 
-  const config = await db.select().from(dnsProxyConfig).where(eq(dnsProxyConfig.userId, userId)).limit(1);
-  
+  const config = await db
+    .select()
+    .from(dnsProxyConfig)
+    .where(eq(dnsProxyConfig.userId, userId))
+    .limit(1);
+
   if (config.length > 0) {
     return config[0];
   }
@@ -19,24 +30,32 @@ export async function getDnsProxyConfig(userId: number) {
   const newConfig: InsertDnsProxyConfig = {
     userId,
     isEnabled: 0,
-    fastestProvider: 'Google DNS',
+    fastestProvider: "Google DNS",
     proxyPort: 53,
     cacheTtl: 3600,
   };
 
   await db.insert(dnsProxyConfig).values(newConfig);
-  const created = await db.select().from(dnsProxyConfig).where(eq(dnsProxyConfig.userId, userId)).limit(1);
+  const created = await db
+    .select()
+    .from(dnsProxyConfig)
+    .where(eq(dnsProxyConfig.userId, userId))
+    .limit(1);
   return created[0];
 }
 
 /**
  * Update DNS proxy configuration
  */
-export async function updateDnsProxyConfig(userId: number, updates: Partial<InsertDnsProxyConfig>) {
+export async function updateDnsProxyConfig(
+  userId: number,
+  updates: Partial<InsertDnsProxyConfig>
+) {
   const db = await getDb();
-  if (!db) throw new Error('Database not available');
+  if (!db) throw new Error("Database not available");
 
-  await db.update(dnsProxyConfig)
+  await db
+    .update(dnsProxyConfig)
     .set({ ...updates, updatedAt: new Date() })
     .where(eq(dnsProxyConfig.userId, userId));
 
@@ -48,7 +67,7 @@ export async function updateDnsProxyConfig(userId: number, updates: Partial<Inse
  */
 export async function logDnsQuery(userId: number, log: InsertDnsQueryLog) {
   const db = await getDb();
-  if (!db) throw new Error('Database not available');
+  if (!db) throw new Error("Database not available");
 
   await db.insert(dnsQueryLog).values({
     ...log,
@@ -61,9 +80,10 @@ export async function logDnsQuery(userId: number, log: InsertDnsQueryLog) {
  */
 export async function getDnsQueryLogs(userId: number, limit: number = 100) {
   const db = await getDb();
-  if (!db) throw new Error('Database not available');
+  if (!db) throw new Error("Database not available");
 
-  return db.select()
+  return db
+    .select()
     .from(dnsQueryLog)
     .where(eq(dnsQueryLog.userId, userId))
     .orderBy(dnsQueryLog.createdAt)
@@ -75,9 +95,10 @@ export async function getDnsQueryLogs(userId: number, limit: number = 100) {
  */
 export async function getDnsProxyStats(userId: number) {
   const db = await getDb();
-  if (!db) throw new Error('Database not available');
+  if (!db) throw new Error("Database not available");
 
-  const stats = await db.select()
+  const stats = await db
+    .select()
     .from(dnsProxyStats)
     .where(eq(dnsProxyStats.userId, userId))
     .orderBy(dnsProxyStats.date)
@@ -103,13 +124,17 @@ export async function getDnsProxyStats(userId: number) {
 /**
  * Update DNS proxy statistics
  */
-export async function updateDnsProxyStats(userId: number, updates: Partial<InsertDnsProxyStats>) {
+export async function updateDnsProxyStats(
+  userId: number,
+  updates: Partial<InsertDnsProxyStats>
+) {
   const db = await getDb();
-  if (!db) throw new Error('Database not available');
+  if (!db) throw new Error("Database not available");
 
   const existing = await getDnsProxyStats(userId);
-  
-  await db.update(dnsProxyStats)
+
+  await db
+    .update(dnsProxyStats)
     .set({ ...updates, updatedAt: new Date() })
     .where(eq(dnsProxyStats.userId, userId));
 
@@ -121,9 +146,12 @@ export async function updateDnsProxyStats(userId: number, updates: Partial<Inser
  */
 export async function getQueryStatsSummary(userId: number) {
   const db = await getDb();
-  if (!db) throw new Error('Database not available');
+  if (!db) throw new Error("Database not available");
 
-  const logs = await db.select().from(dnsQueryLog).where(eq(dnsQueryLog.userId, userId));
+  const logs = await db
+    .select()
+    .from(dnsQueryLog)
+    .where(eq(dnsQueryLog.userId, userId));
 
   let cachedQueries = 0;
   let failedQueries = 0;
@@ -134,8 +162,8 @@ export async function getQueryStatsSummary(userId: number) {
 
   for (const log of logs) {
     if (log.cachedResult === 1) cachedQueries++;
-    if (log.status === 'error') failedQueries++;
-    if (log.status === 'success') successQueries++;
+    if (log.status === "error") failedQueries++;
+    if (log.status === "success") successQueries++;
 
     if (log.resolutionTime !== null) {
       totalResolutionTime += log.resolutionTime;
@@ -150,12 +178,18 @@ export async function getQueryStatsSummary(userId: number) {
     cachedQueries,
     failedQueries,
     successQueries,
-    averageResolutionTime: resolutionTimeCount > 0 ? Math.round(totalResolutionTime / resolutionTimeCount) : 0,
-    mostUsedProvider: '',
-    cacheHitRate: logs.length > 0 ? Math.round((cachedQueries / logs.length) * 100) : 0,
+    averageResolutionTime:
+      resolutionTimeCount > 0
+        ? Math.round(totalResolutionTime / resolutionTimeCount)
+        : 0,
+    mostUsedProvider: "",
+    cacheHitRate:
+      logs.length > 0 ? Math.round((cachedQueries / logs.length) * 100) : 0,
   };
 
-  const mostUsed = Object.entries(providerCounts).sort((a, b) => b[1] - a[1])[0];
+  const mostUsed = Object.entries(providerCounts).sort(
+    (a, b) => b[1] - a[1]
+  )[0];
   if (mostUsed) {
     summary.mostUsedProvider = mostUsed[0];
   }
