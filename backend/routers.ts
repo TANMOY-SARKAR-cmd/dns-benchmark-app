@@ -2,12 +2,17 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
-import { testDomains, DNS_PROVIDERS } from "./dns";
-import { getDnsProxy } from "./dnsProxy";
-import { getDnsQueryLogs } from "./services/queryLogger";
-import { getProxyStats } from "./services/proxyStats";
 import { supabase } from "./supabaseClient";
 import { z } from "zod";
+
+// Move provider config to backend for router usage since dns.ts was moved
+export const DNS_PROVIDERS = {
+  'Google DNS': '8.8.8.8',
+  'Cloudflare DNS': '1.1.1.1',
+  'OpenDNS': '208.67.222.222',
+  'Quad9 DNS': '9.9.9.9',
+  'AdGuard DNS': '94.140.14.14',
+} as const;
 
 export const appRouter = router({
   system: systemRouter,
@@ -38,6 +43,7 @@ export const appRouter = router({
           throw new Error("No valid domains provided");
         }
 
+        const { testDomains } = await import("../dns-proxy/dns");
         const results = await testDomains(domains);
         return results;
       }),
@@ -91,29 +97,45 @@ export const appRouter = router({
           throw new Error('Failed to update config');
         }
 
-        const proxy = getDnsProxy();
-        if (config.is_enabled === 1) {
-          if (config.fastest_provider) {
-            proxy.config.fastestProvider = config.fastest_provider;
-          }
-          if (config.cache_ttl) {
-             proxy.config.cacheTtl = config.cache_ttl;
-          }
-          await proxy.start().catch(console.error);
-        } else {
-          await proxy.stop();
-        }
+        // Proxy process reacts to this update automatically via Realtime
         return config;
       }),
 
     getQueryLogs: publicProcedure
       .input(z.object({ limit: z.number().default(100) }))
       .query(async ({ input }) => {
-        return getDnsQueryLogs('default', input.limit);
+        const { data, error } = await supabase
+          .from('dns_queries')
+          .select('*')
+          .eq('user_id', 'default')
+          .order('created_at', { ascending: false })
+          .limit(input.limit);
+
+        if (error) {
+          console.error('Failed to get DNS query logs from Supabase:', error);
+          return [];
+        }
+
+        return data.map(log => ({
+          id: log.id,
+          userId: log.user_id,
+          domain: log.domain,
+          provider: log.upstream_provider,
+          resolutionTime: log.latency_ms,
+          ipAddress: log.client_ip,
+          status: log.status,
+          cachedResult: log.cached ? 1 : 0,
+          createdAt: new Date(log.created_at)
+        }));
       }),
 
     getStats: publicProcedure.query(async () => {
-      const dbStats = await getProxyStats('default');
+      const { data: dbStats, error } = await supabase
+        .from('proxy_stats')
+        .select('*')
+        .eq('user_id', 'default')
+        .limit(1)
+        .single();
 
       // Calculate derived stats like cache hit rate
       const total = dbStats?.total_queries || 0;

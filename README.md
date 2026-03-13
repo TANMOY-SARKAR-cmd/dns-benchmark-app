@@ -104,21 +104,39 @@ VITE_SUPABASE_URL="https://your-project-id.supabase.co"
 VITE_SUPABASE_ANON_KEY="your-anon-key"
 ```
 
-### 3. Running the App
+### 3. Running the App Locally
 
 1. Install dependencies:
    ```bash
    pnpm install
    ```
 
-2. Start the development server (runs both frontend and backend):
+2. Start the development dashboard server:
    ```bash
    pnpm dev
    ```
 
-3. Open the dashboard at `http://localhost:3000`.
+3. Start the DNS Proxy worker (requires admin/root privileges to bind to port 53):
+   ```bash
+   sudo pnpm run proxy:start
+   ```
 
-### 4. Configuring Your Devices
+4. Open the dashboard at `http://localhost:3000`.
+
+### 4. Deploying to Vercel (Frontend)
+
+This repository is optimized for Vercel deployment.
+
+1. Connect your GitHub repository to Vercel.
+2. The `vercel.json` is already configured to build the Vite React app.
+3. In Vercel Project Settings, add the following Environment Variables:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+4. Click Deploy.
+
+*Note: The backend proxy server cannot be deployed to Vercel as Vercel is a serverless platform that only supports HTTP. You must run the proxy on a traditional VPS (like DigitalOcean, AWS EC2, or a home Raspberry Pi).*
+
+### 5. Configuring Your Devices
 
 To use the smart proxy, enable the proxy from the dashboard and point your device's DNS settings to the server IP (default `127.0.0.1` for local testing).
 
