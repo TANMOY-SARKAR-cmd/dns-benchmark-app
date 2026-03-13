@@ -22,7 +22,7 @@ interface ProxyConfig {
 export class DnsProxyServer {
   private server: dgram.Socket | null = null;
   private cache: DnsCache = {};
-  private config: ProxyConfig;
+  public config: ProxyConfig;
   private queryStats = {
     total: 0,
     cached: 0,
@@ -54,8 +54,9 @@ export class DnsProxyServer {
         reject(err);
       });
 
-      this.server.bind(this.config.port, () => {
-        console.log(`DNS Proxy Server listening on port ${this.config.port}`);
+      // Bind to localhost only to prevent open resolver abuse
+      this.server.bind(this.config.port, '127.0.0.1', () => {
+        console.log(`DNS Proxy Server listening on 127.0.0.1:${this.config.port}`);
         resolve();
       });
     });

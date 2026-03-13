@@ -68,10 +68,10 @@ export const appRouter = router({
         const proxy = getDnsProxy();
         if (config.isEnabled === 1) {
           if (config.fastestProvider) {
-            proxy['config'].fastestProvider = config.fastestProvider;
+            proxy.config.fastestProvider = config.fastestProvider;
           }
           if (config.cacheTtl) {
-             proxy['config'].cacheTtl = config.cacheTtl;
+             proxy.config.cacheTtl = config.cacheTtl;
           }
           await proxy.start().catch(console.error);
         } else {
