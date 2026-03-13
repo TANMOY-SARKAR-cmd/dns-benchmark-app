@@ -45,3 +45,28 @@
 ## Deployment
 - [ ] Create checkpoint
 - [ ] Deploy to production
+
+## Pi-hole DNS Proxy Features
+- [x] Create DNS proxy server that listens on UDP port 53
+- [x] Implement smart routing to fastest DNS provider
+- [x] Add DNS query caching mechanism
+- [x] Create DNS proxy configuration page with setup instructions
+- [x] Display proxy server IP address for device configuration
+- [x] Add query logging and statistics tracking
+- [x] Create dashboard showing DNS queries processed
+- [x] Implement query history with domain and provider info
+- [x] Add DNS proxy enable/disable toggle
+- [x] Create setup guide for Windows, macOS, Linux, iOS, Android
+
+## Database Schema Updates
+- [x] Add dnsProxyConfig table for proxy settings
+- [x] Add dnsQueryLog table for query tracking
+- [x] Add dnsProxyStats table for statistics
+
+## Testing Pi-hole Features
+- [x] Test DNS proxy server startup and listening
+- [x] Test query routing to fastest provider
+- [x] Test DNS caching functionality
+- [x] Test query logging accuracy
+- [x] Verify statistics calculation
+- [x] Run vitest tests for DNS proxy database functions

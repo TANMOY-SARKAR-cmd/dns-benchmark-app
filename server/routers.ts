@@ -1,12 +1,12 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { testDomains, DNS_PROVIDERS } from "./dns";
+import { getDnsProxyConfig, updateDnsProxyConfig, getDnsQueryLogs, getQueryStatsSummary } from "./dnsProxyDb";
 import { z } from "zod";
 
 export const appRouter = router({
-    // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
@@ -44,6 +44,38 @@ export const appRouter = router({
         name,
         ip,
       }));
+    }),
+  }),
+
+  proxy: router({
+    getConfig: protectedProcedure.query(async ({ ctx }) => {
+      if (!ctx.user) throw new Error("Unauthorized");
+      return getDnsProxyConfig(ctx.user.id);
+    }),
+
+    updateConfig: protectedProcedure
+      .input(
+        z.object({
+          isEnabled: z.number().optional(),
+          fastestProvider: z.string().optional(),
+          cacheTtl: z.number().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.user) throw new Error("Unauthorized");
+        return updateDnsProxyConfig(ctx.user.id, input);
+      }),
+
+    getQueryLogs: protectedProcedure
+      .input(z.object({ limit: z.number().default(100) }))
+      .query(async ({ ctx, input }) => {
+        if (!ctx.user) throw new Error("Unauthorized");
+        return getDnsQueryLogs(ctx.user.id, input.limit);
+      }),
+
+    getStats: protectedProcedure.query(async ({ ctx }) => {
+      if (!ctx.user) throw new Error("Unauthorized");
+      return getQueryStatsSummary(ctx.user.id);
     }),
   }),
 });

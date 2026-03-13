@@ -314,7 +314,10 @@ export default function Home() {
           <div className="text-center py-12">
             <Globe className="w-16 h-16 text-slate-300 mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-slate-600 mb-2">No tests run yet</h3>
-            <p className="text-slate-500">Enter domains above and click "Run DNS Test" to get started</p>
+            <p className="text-slate-500 mb-6">Enter domains above and click "Run DNS Test" to get started</p>
+            <a href="/proxy">
+              <Button variant="outline">View DNS Proxy Configuration →</Button>
+            </a>
           </div>
         )}
       </div>
