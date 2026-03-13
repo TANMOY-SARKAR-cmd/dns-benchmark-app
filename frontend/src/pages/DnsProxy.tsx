@@ -13,20 +13,49 @@ export default function DnsProxy() {
   const [proxyIp, setProxyIp] = useState('');
   const [copied, setCopied] = useState(false);
 
-  const configQuery = trpc.proxy.getConfig.useQuery();
-  const statsQuery = trpc.proxy.getStats.useQuery();
-  const logsQuery = trpc.proxy.getQueryLogs.useQuery({ limit: 50 });
-  const updateConfigMutation = trpc.proxy.updateConfig.useMutation();
-
-  const config = configQuery.data;
-  const stats = statsQuery.data;
+  const [config, setConfig] = useState<any>(null);
+  const [stats, setStats] = useState<any>(null);
   const [logs, setLogs] = useState<any[]>([]);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const fetchConfig = useCallback(async () => {
+    const { data } = await supabase.from('proxy_config').select('*').eq('user_id', 'default').limit(1).single();
+    if (data) setConfig(data);
+  }, []);
+
+  const fetchStats = useCallback(async () => {
+    const { data } = await supabase.from('proxy_stats').select('*').eq('user_id', 'default').limit(1).single();
+    if (data) {
+      const total = data.total_queries || 0;
+      const hits = data.cache_hits || 0;
+      setStats({
+        totalQueries: total,
+        cachedQueries: hits,
+        cacheHitRate: total > 0 ? Math.round((hits / total) * 100) : 0,
+        mostUsedProvider: data.active_provider || 'Google DNS',
+        averageResolutionTime: 0
+      });
+    }
+  }, []);
+
+  const fetchLogs = useCallback(async () => {
+    const { data } = await supabase.from('dns_queries').select('*').eq('user_id', 'default').order('created_at', { ascending: false }).limit(50);
+    if (data) {
+      setLogs(data.map((log: any) => ({
+        id: log.id,
+        domain: log.domain,
+        provider: log.upstream_provider,
+        resolutionTime: log.latency_ms,
+        cachedResult: log.cached ? 1 : 0
+      })));
+    }
+  }, []);
 
   useEffect(() => {
-    if (logsQuery.data) {
-      setLogs(logsQuery.data);
-    }
-  }, [logsQuery.data]);
+    fetchConfig();
+    fetchStats();
+    fetchLogs();
+  }, [fetchConfig, fetchStats, fetchLogs]);
 
   useEffect(() => {
     if (config?.proxy_ip) {
@@ -57,14 +86,14 @@ export default function DnsProxy() {
     const statsSubscription = supabase
       .channel('proxy_stats_changes')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'proxy_stats' }, payload => {
-         statsQuery.refetch();
+         fetchStats();
       })
       .subscribe();
 
     const configSubscription = supabase
       .channel('proxy_config_changes')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'proxy_config' }, payload => {
-         configQuery.refetch();
+         fetchConfig();
       })
       .subscribe();
 
@@ -78,24 +107,29 @@ export default function DnsProxy() {
 
   const handleToggleProxy = async () => {
     if (!config) return;
+    setIsUpdating(true);
     try {
-      await updateConfigMutation.mutateAsync({
-        isEnabled: config.is_enabled === 1 ? 0 : 1,
-      });
-      toast.success(`DNS Proxy ${config.is_enabled === 1 ? 'disabled' : 'enabled'}`);
+      const newEnabledState = config.is_enabled === 1 ? 0 : 1;
+      const { error } = await supabase.from('proxy_config').update({ is_enabled: newEnabledState, updated_at: new Date().toISOString() }).eq('user_id', 'default');
+      if (error) throw error;
+      toast.success(`DNS Proxy ${newEnabledState === 0 ? 'disabled' : 'enabled'}`);
     } catch (error) {
       toast.error('Failed to update proxy configuration');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
   const handleUpdateProvider = async (provider: string) => {
+    setIsUpdating(true);
     try {
-      await updateConfigMutation.mutateAsync({
-        fastestProvider: provider,
-      });
+      const { error } = await supabase.from('proxy_config').update({ fastest_provider: provider, updated_at: new Date().toISOString() }).eq('user_id', 'default');
+      if (error) throw error;
       toast.success(`Fastest provider updated to ${provider}`);
     } catch (error) {
       toast.error('Failed to update provider');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -138,7 +172,7 @@ export default function DnsProxy() {
                   <Switch
                     checked={config?.is_enabled === 1}
                     onCheckedChange={handleToggleProxy}
-                    disabled={updateConfigMutation.isPending}
+                    disabled={isUpdating}
                   />
                 </CardTitle>
               </CardHeader>
@@ -211,7 +245,7 @@ export default function DnsProxy() {
                 <Select
                   value={config?.fastest_provider || 'Google DNS'}
                   onValueChange={handleUpdateProvider}
-                  disabled={updateConfigMutation.isPending}
+                  disabled={isUpdating}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select a provider" />
