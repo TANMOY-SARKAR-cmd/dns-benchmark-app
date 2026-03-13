@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { trpc } from '@/lib/trpc';
+import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
@@ -19,22 +20,69 @@ export default function DnsProxy() {
 
   const config = configQuery.data;
   const stats = statsQuery.data;
-  const logs = logsQuery.data;
+  const [logs, setLogs] = useState<any[]>([]);
 
   useEffect(() => {
-    if (config?.proxyIp) {
-      setProxyIp(config.proxyIp);
+    if (logsQuery.data) {
+      setLogs(logsQuery.data);
+    }
+  }, [logsQuery.data]);
+
+  useEffect(() => {
+    if (config?.proxy_ip) {
+      setProxyIp(config.proxy_ip);
+    } else {
+      setProxyIp('127.0.0.1'); // Default local proxy IP
     }
   }, [config]);
+
+  // Setup Realtime subscriptions
+  useEffect(() => {
+    const logsSubscription = supabase
+      .channel('dns_queries_changes')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'dns_queries' }, payload => {
+        setLogs(current => {
+          const newLog = {
+            id: payload.new.id,
+            domain: payload.new.domain,
+            provider: payload.new.upstream_provider,
+            resolutionTime: payload.new.latency_ms,
+            cachedResult: payload.new.cached ? 1 : 0
+          };
+          return [newLog, ...current].slice(0, 50); // keep last 50
+        });
+      })
+      .subscribe();
+
+    const statsSubscription = supabase
+      .channel('proxy_stats_changes')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'proxy_stats' }, payload => {
+         statsQuery.refetch();
+      })
+      .subscribe();
+
+    const configSubscription = supabase
+      .channel('proxy_config_changes')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'proxy_config' }, payload => {
+         configQuery.refetch();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(logsSubscription);
+      supabase.removeChannel(statsSubscription);
+      supabase.removeChannel(configSubscription);
+    };
+  }, []);
+
 
   const handleToggleProxy = async () => {
     if (!config) return;
     try {
       await updateConfigMutation.mutateAsync({
-        isEnabled: config.isEnabled === 1 ? 0 : 1,
+        isEnabled: config.is_enabled === 1 ? 0 : 1,
       });
-      toast.success(`DNS Proxy ${config.isEnabled === 1 ? 'disabled' : 'enabled'}`);
-      configQuery.refetch();
+      toast.success(`DNS Proxy ${config.is_enabled === 1 ? 'disabled' : 'enabled'}`);
     } catch (error) {
       toast.error('Failed to update proxy configuration');
     }
@@ -46,7 +94,6 @@ export default function DnsProxy() {
         fastestProvider: provider,
       });
       toast.success(`Fastest provider updated to ${provider}`);
-      configQuery.refetch();
     } catch (error) {
       toast.error('Failed to update provider');
     }
@@ -89,7 +136,7 @@ export default function DnsProxy() {
                     Proxy Status
                   </span>
                   <Switch
-                    checked={config?.isEnabled === 1}
+                    checked={config?.is_enabled === 1}
                     onCheckedChange={handleToggleProxy}
                     disabled={updateConfigMutation.isPending}
                   />
@@ -97,7 +144,7 @@ export default function DnsProxy() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center gap-3 p-4 bg-purple-50 rounded-lg border border-purple-200">
-                  {config?.isEnabled === 1 ? (
+                  {config?.is_enabled === 1 ? (
                     <>
                       <CheckCircle2 className="w-5 h-5 text-green-600" />
                       <span className="text-slate-900 font-semibold">DNS Proxy is Active</span>
@@ -146,7 +193,7 @@ export default function DnsProxy() {
                 </div>
                 <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
                   <p className="text-sm text-slate-700">
-                    <strong>Default Port:</strong> {config?.proxyPort || 53}
+                    <strong>Default Port:</strong> {config?.proxy_port || 53}
                   </p>
                 </div>
               </CardContent>
@@ -162,7 +209,7 @@ export default function DnsProxy() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <Select
-                  value={config?.fastestProvider || 'Google DNS'}
+                  value={config?.fastest_provider || 'Google DNS'}
                   onValueChange={handleUpdateProvider}
                   disabled={updateConfigMutation.isPending}
                 >
@@ -178,7 +225,7 @@ export default function DnsProxy() {
                   </SelectContent>
                 </Select>
                 <p className="text-sm text-slate-600">
-                  Current provider: <strong>{config?.fastestProvider || 'Not set'}</strong>
+                  Current provider: <strong>{config?.fastest_provider || 'Not set'}</strong>
                 </p>
               </CardContent>
             </Card>
@@ -274,11 +321,16 @@ export default function DnsProxy() {
                 <CardContent>
                   <div className="space-y-2 max-h-64 overflow-y-auto">
                     {logs.slice(0, 10).map((log) => (
-                      <div key={log.id} className="text-xs p-2 bg-slate-50 rounded">
-                        <p className="font-mono text-slate-900 truncate">{log.domain}</p>
-                        <p className="text-slate-600">
-                          {log.provider} • {log.resolutionTime}ms
-                        </p>
+                      <div key={log.id} className="text-xs p-2 bg-slate-50 rounded flex justify-between">
+                        <div>
+                          <p className="font-mono text-slate-900 truncate max-w-[120px]" title={log.domain}>{log.domain}</p>
+                          <p className="text-slate-600">
+                            {log.provider}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-slate-900 font-semibold">{log.cachedResult ? 'Cached' : `${log.resolutionTime || 0}ms`}</p>
+                        </div>
                       </div>
                     ))}
                   </div>
