@@ -173,11 +173,76 @@ import { useState } from "react";
 import { toast as sonnerToast } from "sonner";
 import { AIChatBox, type Message } from "@/components/AIChatBox";
 
+function DateTimePickerDemo() {
+  const [datePickerDate, setDatePickerDate] = useState<Date>();
+
+  return (
+    <div className="space-y-2">
+      <Label>Date Time Picker</Label>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            className={`w-full justify-start text-left font-normal ${
+              !datePickerDate && "text-muted-foreground"
+            }`}
+          >
+            <CalendarIcon className="mr-2 h-4 w-4" />
+            {datePickerDate ? (
+              format(datePickerDate, "PPP HH:mm", { locale: zhCN })
+            ) : (
+              <span>Select date and time</span>
+            )}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="start">
+          <div className="p-3 space-y-3">
+            <Calendar
+              mode="single"
+              selected={datePickerDate}
+              onSelect={setDatePickerDate}
+            />
+            <div className="border-t pt-3 space-y-2">
+              <Label className="flex items-center gap-2">
+                <Clock className="h-4 w-4" />
+                Time
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  type="time"
+                  value={
+                    datePickerDate ? format(datePickerDate, "HH:mm") : "00:00"
+                  }
+                  onChange={e => {
+                    const [hours, minutes] = e.target.value.split(":");
+                    const newDate = datePickerDate
+                      ? new Date(datePickerDate)
+                      : new Date();
+                    newDate.setHours(parseInt(hours));
+                    newDate.setMinutes(parseInt(minutes));
+                    setDatePickerDate(newDate);
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </PopoverContent>
+      </Popover>
+      {datePickerDate && (
+        <p className="text-sm text-muted-foreground">
+          Selected:{" "}
+          {format(datePickerDate, "yyyy/MM/dd  HH:mm", {
+            locale: zhCN,
+          })}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function ComponentsShowcase() {
   const { theme, toggleTheme } = useTheme();
   const [date, setDate] = useState<Date | undefined>(new Date());
-  const [datePickerDate, setDatePickerDate] = useState<Date>();
-  const [selectedFruits, setSelectedFruits] = useState<string[]>([]);
   const [progress, setProgress] = useState(33);
   const [currentPage, setCurrentPage] = useState(2);
   const [openCombobox, setOpenCombobox] = useState(false);
@@ -470,69 +535,7 @@ export default function ComponentsShowcase() {
                     </InputOTPGroup>
                   </InputOTP>
                 </div>
-                <div className="space-y-2">
-                  <Label>Date Time Picker</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={`w-full justify-start text-left font-normal ${
-                          !datePickerDate && "text-muted-foreground"
-                        }`}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {datePickerDate ? (
-                          format(datePickerDate, "PPP HH:mm", { locale: zhCN })
-                        ) : (
-                          <span>Select date and time</span>
-                        )}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <div className="p-3 space-y-3">
-                        <Calendar
-                          mode="single"
-                          selected={datePickerDate}
-                          onSelect={setDatePickerDate}
-                        />
-                        <div className="border-t pt-3 space-y-2">
-                          <Label className="flex items-center gap-2">
-                            <Clock className="h-4 w-4" />
-                            Time
-                          </Label>
-                          <div className="flex gap-2">
-                            <Input
-                              type="time"
-                              value={
-                                datePickerDate
-                                  ? format(datePickerDate, "HH:mm")
-                                  : "00:00"
-                              }
-                              onChange={e => {
-                                const [hours, minutes] =
-                                  e.target.value.split(":");
-                                const newDate = datePickerDate
-                                  ? new Date(datePickerDate)
-                                  : new Date();
-                                newDate.setHours(parseInt(hours));
-                                newDate.setMinutes(parseInt(minutes));
-                                setDatePickerDate(newDate);
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                  {datePickerDate && (
-                    <p className="text-sm text-muted-foreground">
-                      Selected:{" "}
-                      {format(datePickerDate, "yyyy/MM/dd  HH:mm", {
-                        locale: zhCN,
-                      })}
-                    </p>
-                  )}
-                </div>
+                <DateTimePickerDemo />
                 <div className="space-y-2">
                   <Label>Searchable Dropdown</Label>
                   <Popover open={openCombobox} onOpenChange={setOpenCombobox}>
