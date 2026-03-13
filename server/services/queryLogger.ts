@@ -1,4 +1,4 @@
-import { supabase } from '../supabaseClient';
+import { supabase } from "../supabaseClient";
 
 export async function logDnsQuery(query: {
   userId: string;
@@ -8,10 +8,10 @@ export async function logDnsQuery(query: {
   upstreamProvider: string;
   latencyMs?: number;
   cached: boolean;
-  status: 'success' | 'error';
+  status: "success" | "error";
 }) {
   try {
-    const { error } = await supabase.from('dns_queries').insert({
+    const { error } = await supabase.from("dns_queries").insert({
       user_id: query.userId,
       domain: query.domain,
       record_type: query.recordType,
@@ -23,23 +23,23 @@ export async function logDnsQuery(query: {
     });
 
     if (error) {
-      console.error('Failed to log DNS query to Supabase:', error);
+      console.error("Failed to log DNS query to Supabase:", error);
     }
   } catch (err) {
-    console.error('Exception logging DNS query:', err);
+    console.error("Exception logging DNS query:", err);
   }
 }
 
 export async function getDnsQueryLogs(userId: string, limit: number = 100) {
   const { data, error } = await supabase
-    .from('dns_queries')
-    .select('*')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
+    .from("dns_queries")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
     .limit(limit);
 
   if (error) {
-    console.error('Failed to get DNS query logs from Supabase:', error);
+    console.error("Failed to get DNS query logs from Supabase:", error);
     return [];
   }
 
@@ -53,6 +53,6 @@ export async function getDnsQueryLogs(userId: string, limit: number = 100) {
     ipAddress: log.client_ip,
     status: log.status,
     cachedResult: log.cached ? 1 : 0,
-    createdAt: new Date(log.created_at)
+    createdAt: new Date(log.created_at),
   }));
 }

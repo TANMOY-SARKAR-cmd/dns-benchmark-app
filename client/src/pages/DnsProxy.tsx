@@ -1,16 +1,35 @@
-import { useEffect, useState, useCallback } from 'react';
-import { trpc } from '@/lib/trpc';
-import { supabase } from '@/lib/supabase';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Switch } from '@/components/ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
-import { AlertCircle, CheckCircle2, Copy, Globe, Server, Zap } from 'lucide-react';
-import { toast } from 'sonner';
+import { useEffect, useState, useCallback } from "react";
+import { trpc } from "@/lib/trpc";
+import { supabase } from "@/lib/supabase";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import {
+  AlertCircle,
+  CheckCircle2,
+  Copy,
+  Globe,
+  Server,
+  Zap,
+} from "lucide-react";
+import { toast } from "sonner";
 
 export default function DnsProxy() {
-  const [proxyIp, setProxyIp] = useState('');
+  const [proxyIp, setProxyIp] = useState("");
   const [copied, setCopied] = useState(false);
 
   const configQuery = trpc.proxy.getConfig.useQuery();
@@ -32,40 +51,52 @@ export default function DnsProxy() {
     if (config?.proxy_ip) {
       setProxyIp(config.proxy_ip);
     } else {
-      setProxyIp('127.0.0.1'); // Default local proxy IP
+      setProxyIp("127.0.0.1"); // Default local proxy IP
     }
   }, [config]);
 
   // Setup Realtime subscriptions
   useEffect(() => {
     const logsSubscription = supabase
-      .channel('dns_queries_changes')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'dns_queries' }, payload => {
-        setLogs(current => {
-          const newLog = {
-            id: payload.new.id,
-            domain: payload.new.domain,
-            provider: payload.new.upstream_provider,
-            resolutionTime: payload.new.latency_ms,
-            cachedResult: payload.new.cached ? 1 : 0
-          };
-          return [newLog, ...current].slice(0, 50); // keep last 50
-        });
-      })
+      .channel("dns_queries_changes")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "dns_queries" },
+        payload => {
+          setLogs(current => {
+            const newLog = {
+              id: payload.new.id,
+              domain: payload.new.domain,
+              provider: payload.new.upstream_provider,
+              resolutionTime: payload.new.latency_ms,
+              cachedResult: payload.new.cached ? 1 : 0,
+            };
+            return [newLog, ...current].slice(0, 50); // keep last 50
+          });
+        }
+      )
       .subscribe();
 
     const statsSubscription = supabase
-      .channel('proxy_stats_changes')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'proxy_stats' }, payload => {
-         statsQuery.refetch();
-      })
+      .channel("proxy_stats_changes")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "proxy_stats" },
+        payload => {
+          statsQuery.refetch();
+        }
+      )
       .subscribe();
 
     const configSubscription = supabase
-      .channel('proxy_config_changes')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'proxy_config' }, payload => {
-         configQuery.refetch();
-      })
+      .channel("proxy_config_changes")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "proxy_config" },
+        payload => {
+          configQuery.refetch();
+        }
+      )
       .subscribe();
 
     return () => {
@@ -75,16 +106,17 @@ export default function DnsProxy() {
     };
   }, []);
 
-
   const handleToggleProxy = async () => {
     if (!config) return;
     try {
       await updateConfigMutation.mutateAsync({
         isEnabled: config.is_enabled === 1 ? 0 : 1,
       });
-      toast.success(`DNS Proxy ${config.is_enabled === 1 ? 'disabled' : 'enabled'}`);
+      toast.success(
+        `DNS Proxy ${config.is_enabled === 1 ? "disabled" : "enabled"}`
+      );
     } catch (error) {
-      toast.error('Failed to update proxy configuration');
+      toast.error("Failed to update proxy configuration");
     }
   };
 
@@ -95,7 +127,7 @@ export default function DnsProxy() {
       });
       toast.success(`Fastest provider updated to ${provider}`);
     } catch (error) {
-      toast.error('Failed to update provider');
+      toast.error("Failed to update provider");
     }
   };
 
@@ -103,7 +135,7 @@ export default function DnsProxy() {
     if (proxyIp) {
       navigator.clipboard.writeText(proxyIp);
       setCopied(true);
-      toast.success('Proxy IP copied to clipboard');
+      toast.success("Proxy IP copied to clipboard");
       setTimeout(() => setCopied(false), 2000);
     }
   };
@@ -117,9 +149,14 @@ export default function DnsProxy() {
         <div className="container mx-auto px-4 py-8">
           <div className="flex items-center gap-3 mb-2">
             <Server className="w-8 h-8 text-purple-600" />
-            <h1 className="text-4xl font-bold text-slate-900">DNS Proxy (Pi-hole Mode)</h1>
+            <h1 className="text-4xl font-bold text-slate-900">
+              DNS Proxy (Pi-hole Mode)
+            </h1>
           </div>
-          <p className="text-slate-600">Configure your device to use this DNS proxy for automatic routing to the fastest provider</p>
+          <p className="text-slate-600">
+            Configure your device to use this DNS proxy for automatic routing to
+            the fastest provider
+          </p>
         </div>
       </div>
 
@@ -147,17 +184,22 @@ export default function DnsProxy() {
                   {config?.is_enabled === 1 ? (
                     <>
                       <CheckCircle2 className="w-5 h-5 text-green-600" />
-                      <span className="text-slate-900 font-semibold">DNS Proxy is Active</span>
+                      <span className="text-slate-900 font-semibold">
+                        DNS Proxy is Active
+                      </span>
                     </>
                   ) : (
                     <>
                       <AlertCircle className="w-5 h-5 text-orange-600" />
-                      <span className="text-slate-900 font-semibold">DNS Proxy is Inactive</span>
+                      <span className="text-slate-900 font-semibold">
+                        DNS Proxy is Inactive
+                      </span>
                     </>
                   )}
                 </div>
                 <p className="text-sm text-slate-600">
-                  When enabled, this DNS proxy will automatically route all DNS queries to the fastest provider based on recent benchmarks.
+                  When enabled, this DNS proxy will automatically route all DNS
+                  queries to the fastest provider based on recent benchmarks.
                 </p>
               </CardContent>
             </Card>
@@ -188,7 +230,7 @@ export default function DnsProxy() {
                     disabled={!proxyIp}
                   >
                     <Copy className="w-4 h-4" />
-                    {copied ? 'Copied!' : 'Copy'}
+                    {copied ? "Copied!" : "Copy"}
                   </Button>
                 </div>
                 <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
@@ -209,7 +251,7 @@ export default function DnsProxy() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <Select
-                  value={config?.fastest_provider || 'Google DNS'}
+                  value={config?.fastest_provider || "Google DNS"}
                   onValueChange={handleUpdateProvider}
                   disabled={updateConfigMutation.isPending}
                 >
@@ -217,7 +259,7 @@ export default function DnsProxy() {
                     <SelectValue placeholder="Select a provider" />
                   </SelectTrigger>
                   <SelectContent>
-                    {providers.data?.map((provider) => (
+                    {providers.data?.map(provider => (
                       <SelectItem key={provider.name} value={provider.name}>
                         {provider.name} ({provider.ip})
                       </SelectItem>
@@ -225,7 +267,8 @@ export default function DnsProxy() {
                   </SelectContent>
                 </Select>
                 <p className="text-sm text-slate-600">
-                  Current provider: <strong>{config?.fastest_provider || 'Not set'}</strong>
+                  Current provider:{" "}
+                  <strong>{config?.fastest_provider || "Not set"}</strong>
                 </p>
               </CardContent>
             </Card>
@@ -238,13 +281,18 @@ export default function DnsProxy() {
               <CardContent className="space-y-4">
                 <div className="space-y-3">
                   <div>
-                    <h4 className="font-semibold text-slate-900 mb-2">Windows</h4>
+                    <h4 className="font-semibold text-slate-900 mb-2">
+                      Windows
+                    </h4>
                     <ol className="text-sm text-slate-700 space-y-1 ml-4 list-decimal">
-                      <li>Go to Settings → Network & Internet → Advanced network settings</li>
+                      <li>
+                        Go to Settings → Network & Internet → Advanced network
+                        settings
+                      </li>
                       <li>Click "Change adapter options"</li>
                       <li>Right-click your network → Properties</li>
                       <li>Select IPv4 → Properties</li>
-                      <li>Enter DNS: {proxyIp || 'Your proxy IP'}</li>
+                      <li>Enter DNS: {proxyIp || "Your proxy IP"}</li>
                     </ol>
                   </div>
                   <div>
@@ -252,7 +300,7 @@ export default function DnsProxy() {
                     <ol className="text-sm text-slate-700 space-y-1 ml-4 list-decimal">
                       <li>System Preferences → Network</li>
                       <li>Select your connection → Advanced</li>
-                      <li>DNS tab → Add {proxyIp || 'Your proxy IP'}</li>
+                      <li>DNS tab → Add {proxyIp || "Your proxy IP"}</li>
                       <li>Click OK and Apply</li>
                     </ol>
                   </div>
@@ -260,7 +308,7 @@ export default function DnsProxy() {
                     <h4 className="font-semibold text-slate-900 mb-2">Linux</h4>
                     <ol className="text-sm text-slate-700 space-y-1 ml-4 list-decimal">
                       <li>Edit /etc/resolv.conf</li>
-                      <li>Add: nameserver {proxyIp || 'Your proxy IP'}</li>
+                      <li>Add: nameserver {proxyIp || "Your proxy IP"}</li>
                       <li>Save and restart networking</li>
                     </ol>
                   </div>
@@ -277,8 +325,12 @@ export default function DnsProxy() {
                 <Card className="border-slate-200 shadow-lg">
                   <CardContent className="pt-6">
                     <div className="text-center">
-                      <p className="text-slate-600 text-sm font-medium mb-1">Total Queries</p>
-                      <p className="text-3xl font-bold text-purple-600">{stats.totalQueries}</p>
+                      <p className="text-slate-600 text-sm font-medium mb-1">
+                        Total Queries
+                      </p>
+                      <p className="text-3xl font-bold text-purple-600">
+                        {stats.totalQueries}
+                      </p>
                     </div>
                   </CardContent>
                 </Card>
@@ -286,8 +338,12 @@ export default function DnsProxy() {
                 <Card className="border-slate-200 shadow-lg">
                   <CardContent className="pt-6">
                     <div className="text-center">
-                      <p className="text-slate-600 text-sm font-medium mb-1">Cache Hit Rate</p>
-                      <p className="text-3xl font-bold text-green-600">{stats.cacheHitRate}%</p>
+                      <p className="text-slate-600 text-sm font-medium mb-1">
+                        Cache Hit Rate
+                      </p>
+                      <p className="text-3xl font-bold text-green-600">
+                        {stats.cacheHitRate}%
+                      </p>
                     </div>
                   </CardContent>
                 </Card>
@@ -295,8 +351,12 @@ export default function DnsProxy() {
                 <Card className="border-slate-200 shadow-lg">
                   <CardContent className="pt-6">
                     <div className="text-center">
-                      <p className="text-slate-600 text-sm font-medium mb-1">Avg Resolution</p>
-                      <p className="text-3xl font-bold text-blue-600">{stats.averageResolutionTime}ms</p>
+                      <p className="text-slate-600 text-sm font-medium mb-1">
+                        Avg Resolution
+                      </p>
+                      <p className="text-3xl font-bold text-blue-600">
+                        {stats.averageResolutionTime}ms
+                      </p>
                     </div>
                   </CardContent>
                 </Card>
@@ -304,8 +364,12 @@ export default function DnsProxy() {
                 <Card className="border-slate-200 shadow-lg">
                   <CardContent className="pt-6">
                     <div className="text-center">
-                      <p className="text-slate-600 text-sm font-medium mb-1">Most Used</p>
-                      <p className="text-lg font-bold text-slate-900">{stats.mostUsedProvider || 'N/A'}</p>
+                      <p className="text-slate-600 text-sm font-medium mb-1">
+                        Most Used
+                      </p>
+                      <p className="text-lg font-bold text-slate-900">
+                        {stats.mostUsedProvider || "N/A"}
+                      </p>
                     </div>
                   </CardContent>
                 </Card>
@@ -320,16 +384,26 @@ export default function DnsProxy() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {logs.slice(0, 10).map((log) => (
-                      <div key={log.id} className="text-xs p-2 bg-slate-50 rounded flex justify-between">
+                    {logs.slice(0, 10).map(log => (
+                      <div
+                        key={log.id}
+                        className="text-xs p-2 bg-slate-50 rounded flex justify-between"
+                      >
                         <div>
-                          <p className="font-mono text-slate-900 truncate max-w-[120px]" title={log.domain}>{log.domain}</p>
-                          <p className="text-slate-600">
-                            {log.provider}
+                          <p
+                            className="font-mono text-slate-900 truncate max-w-[120px]"
+                            title={log.domain}
+                          >
+                            {log.domain}
                           </p>
+                          <p className="text-slate-600">{log.provider}</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-slate-900 font-semibold">{log.cachedResult ? 'Cached' : `${log.resolutionTime || 0}ms`}</p>
+                          <p className="text-slate-900 font-semibold">
+                            {log.cachedResult
+                              ? "Cached"
+                              : `${log.resolutionTime || 0}ms`}
+                          </p>
                         </div>
                       </div>
                     ))}
