@@ -7,6 +7,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+// Proxy logic has been decoupled and moved to the dns-proxy worker
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
