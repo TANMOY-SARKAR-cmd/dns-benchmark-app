@@ -23,6 +23,13 @@ export class DnsProxyServer {
   private server: dgram.Socket | null = null;
   private cache: DnsCache = {};
   private config: ProxyConfig;
+
+  /**
+   * Update proxy configuration at runtime
+   */
+  updateConfig(updates: Partial<ProxyConfig>): void {
+    Object.assign(this.config, updates);
+  }
   private queryStats = {
     total: 0,
     cached: 0,
@@ -269,4 +276,41 @@ export async function startDnsProxy(config?: Partial<ProxyConfig>): Promise<DnsP
   const proxy = new DnsProxyServer(config);
   await proxy.start();
   return proxy;
+}
+
+// Background benchmark management
+const BENCHMARK_DOMAINS = ['google.com', 'github.com', 'cloudflare.com'];
+const BENCHMARK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+let benchmarkTimeout: ReturnType<typeof setTimeout> | null = null;
+let benchmarkStopped = false;
+
+export function startBackgroundBenchmark(
+  proxy: DnsProxyServer,
+  domains = BENCHMARK_DOMAINS,
+  intervalMs = BENCHMARK_INTERVAL_MS
+): void {
+  if (benchmarkTimeout) return;
+  benchmarkStopped = false;
+
+  const schedule = async () => {
+    if (benchmarkStopped) return;
+    try {
+      await proxy.updateFastestProvider(domains);
+    } catch (err) {
+      console.error('Background benchmark error:', err);
+    }
+    if (!benchmarkStopped) {
+      benchmarkTimeout = setTimeout(schedule, intervalMs);
+    }
+  };
+
+  benchmarkTimeout = setTimeout(schedule, intervalMs);
+}
+
+export function stopBackgroundBenchmark(): void {
+  benchmarkStopped = true;
+  if (benchmarkTimeout) {
+    clearTimeout(benchmarkTimeout);
+    benchmarkTimeout = null;
+  }
 }

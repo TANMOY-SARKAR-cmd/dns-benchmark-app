@@ -57,11 +57,12 @@ export const appRouter = router({
   }),
 
   proxy: router({
-    getConfig: publicProcedure.query(async () => {
+    getConfig: protectedProcedure.query(async ({ ctx }) => {
+      const userId = ctx.user.id.toString();
       const { data, error } = await supabase
         .from('proxy_config')
         .select('*')
-        .eq('user_id', 'default')
+        .eq('user_id', userId)
         .limit(1)
         .single();
 
@@ -72,7 +73,7 @@ export const appRouter = router({
       return data || { is_enabled: 0, fastest_provider: 'Google DNS', proxy_port: 53 };
     }),
 
-    updateConfig: publicProcedure
+    updateConfig: protectedProcedure
       .input(
         z.object({
           isEnabled: z.number().optional(),
@@ -80,7 +81,8 @@ export const appRouter = router({
           cacheTtl: z.number().optional(),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const userId = ctx.user.id.toString();
         const updateData: any = { updated_at: new Date().toISOString() };
         if (input.isEnabled !== undefined) updateData.is_enabled = input.isEnabled;
         if (input.fastestProvider !== undefined) updateData.fastest_provider = input.fastestProvider;
@@ -89,7 +91,7 @@ export const appRouter = router({
         const { data: config, error } = await supabase
           .from('proxy_config')
           .update(updateData)
-          .eq('user_id', 'default')
+          .eq('user_id', userId)
           .select()
           .single();
 
@@ -101,13 +103,14 @@ export const appRouter = router({
         return config;
       }),
 
-    getQueryLogs: publicProcedure
+    getQueryLogs: protectedProcedure
       .input(z.object({ limit: z.number().default(100) }))
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
+        const userId = ctx.user.id.toString();
         const { data, error } = await supabase
           .from('dns_queries')
           .select('*')
-          .eq('user_id', 'default')
+          .eq('user_id', userId)
           .order('created_at', { ascending: false })
           .limit(input.limit);
 
@@ -129,11 +132,12 @@ export const appRouter = router({
         }));
       }),
 
-    getStats: publicProcedure.query(async () => {
+    getStats: protectedProcedure.query(async ({ ctx }) => {
+      const userId = ctx.user.id.toString();
       const { data: dbStats, error } = await supabase
         .from('proxy_stats')
         .select('*')
-        .eq('user_id', 'default')
+        .eq('user_id', userId)
         .limit(1)
         .single();
 

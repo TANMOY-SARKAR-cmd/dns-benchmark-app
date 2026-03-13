@@ -19,8 +19,8 @@ async function syncProxyState() {
   }
 
   // Sync settings
-  if (config.fastest_provider) proxy.config.fastestProvider = config.fastest_provider;
-  if (config.cache_ttl) proxy.config.cacheTtl = config.cache_ttl;
+  if (config.fastest_provider) proxy.updateConfig({ fastestProvider: config.fastest_provider });
+  if (config.cache_ttl) proxy.updateConfig({ cacheTtl: config.cache_ttl });
 
   // Handle start/stop
   if (config.is_enabled === 1 && !isRunning) {
@@ -28,7 +28,7 @@ async function syncProxyState() {
     await proxy.start().catch(console.error);
     isRunning = true;
     if (config.auto_routing_enabled !== false) {
-      startBackgroundBenchmark();
+      startBackgroundBenchmark(proxy);
     }
   } else if (config.is_enabled === 0 && isRunning) {
     console.log('Stopping DNS proxy based on database config...');
