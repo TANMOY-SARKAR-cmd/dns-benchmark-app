@@ -95,4 +95,46 @@ export const dnsProxyStats = mysqlTable("dnsProxyStats", {
 export type DnsProxyStats = typeof dnsProxyStats.$inferSelect;
 export type InsertDnsProxyStats = typeof dnsProxyStats.$inferInsert;
 
+export const notifications = mysqlTable("notifications", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  type: mysqlEnum("type", [
+    "DNS_TEST_COMPLETE",
+    "DNS_TEST_FAILED",
+    "PROXY_STATUS_CHANGED",
+    "PROXY_ERROR",
+    "BENCHMARK_COMPLETE",
+    "ALERT",
+    "INFO",
+  ]).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  message: text("message").notNull(),
+  data: text("data"), // JSON string for additional data
+  isRead: int("isRead").default(0).notNull(), // 0 = unread, 1 = read
+  isDismissed: int("isDismissed").default(0).notNull(), // 0 = active, 1 = dismissed
+  actionUrl: varchar("actionUrl", { length: 512 }), // Optional URL for action button
+  actionLabel: varchar("actionLabel", { length: 100 }), // Optional label for action button
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = typeof notifications.$inferInsert;
+
+export const notificationPreferences = mysqlTable("notificationPreferences", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+  emailNotifications: int("emailNotifications").default(1).notNull(), // 0 = disabled, 1 = enabled
+  pushNotifications: int("pushNotifications").default(1).notNull(),
+  soundEnabled: int("soundEnabled").default(1).notNull(),
+  dnsTestAlerts: int("dnsTestAlerts").default(1).notNull(),
+  proxyStatusAlerts: int("proxyStatusAlerts").default(1).notNull(),
+  benchmarkAlerts: int("benchmarkAlerts").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type NotificationPreferences = typeof notificationPreferences.$inferSelect;
+export type InsertNotificationPreferences = typeof notificationPreferences.$inferInsert;
+
 // TODO: Add your tables here

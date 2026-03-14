@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { AlertCircle, CheckCircle2, Globe, Zap } from "lucide-react";
 import { toast } from "sonner";
+import { NotificationCenter } from "@/components/NotificationCenter";
 import {
   BarChart,
   Bar,
@@ -188,9 +189,12 @@ export default function Home() {
       {/* Header */}
       <div className="border-b border-slate-200 bg-white/50 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-8">
-          <div className="flex items-center gap-3 mb-2">
-            <Globe className="w-8 h-8 text-blue-600" />
-            <h1 className="text-4xl font-bold text-slate-900">DNS Benchmark</h1>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-3">
+              <Globe className="w-8 h-8 text-blue-600" />
+              <h1 className="text-4xl font-bold text-slate-900">DNS Benchmark</h1>
+            </div>
+            <NotificationCenter />
           </div>
           <p className="text-slate-600">
             Compare DNS resolution speeds across multiple providers

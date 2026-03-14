@@ -79,3 +79,21 @@
 - [x] Test query logging accuracy
 - [x] Verify statistics calculation
 - [x] Run vitest tests for DNS proxy database functions
+
+
+## Custom Notification System
+- [x] Create notifications database table schema
+- [x] Add notification types (DNS_TEST_COMPLETE, PROXY_STATUS_CHANGED, ERROR_ALERT)
+- [x] Implement backend notification creation procedures
+- [x] Add notification retrieval and filtering procedures
+- [x] Create notification dismissal functionality
+- [x] Build notification center UI component
+- [x] Add real-time notification toast alerts
+- [x] Implement notification badge counter
+- [x] Add notification preferences/settings
+- [x] Create notification history view
+- [x] Implement email notification option
+- [x] Add notification sound/vibration alerts
+- [x] Test notification system with various scenarios
+- [x] Verify notification persistence in database
+- [x] Test notification UI responsiveness

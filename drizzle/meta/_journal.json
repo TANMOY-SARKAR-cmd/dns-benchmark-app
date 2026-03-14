@@ -22,6 +22,13 @@
       "when": 1773382461096,
       "tag": "0002_thankful_dracula",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1773508432613,
+      "tag": "0003_loving_prowler",
+      "breakpoints": true
     }
   ]
 }

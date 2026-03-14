@@ -8,6 +8,22 @@ import { getDnsQueryLogs } from "./services/queryLogger";
 import { getProxyStats } from "./services/proxyStats";
 import { supabase } from "./supabaseClient";
 import { z } from "zod";
+import {
+  createNotification,
+  getUserNotifications,
+  getUnreadNotificationCount,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
+  dismissNotification,
+  dismissAllNotifications,
+  getNotificationPreferences,
+  upsertNotificationPreferences,
+} from "./notificationDb";
+import {
+  notifyDnsTestComplete,
+  notifyDnsTestFailed,
+  notifyBenchmarkComplete,
+} from "./notificationService";
 
 export const appRouter = router({
   system: systemRouter,
@@ -23,13 +39,13 @@ export const appRouter = router({
   }),
 
   dns: router({
-    test: publicProcedure
+    test: protectedProcedure
       .input(
         z.object({
           domains: z.array(z.string().min(1)).min(1).max(100),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const domains = input.domains
           .map(d => d.trim().toLowerCase())
           .filter(d => d.length > 0);
@@ -38,8 +54,51 @@ export const appRouter = router({
           throw new Error("No valid domains provided");
         }
 
-        const results = await testDomains(domains);
-        return results;
+        try {
+          const results = await testDomains(domains);
+
+          // Calculate statistics for notification
+          const allTimes: number[] = [];
+          let fastestProvider = '';
+          let fastestTime = Infinity;
+
+          Object.values(results).forEach((domainResults) => {
+            Object.entries(domainResults).forEach(([provider, metrics]) => {
+              const dnsTime = typeof metrics === 'number' ? metrics : (typeof metrics === 'object' && 'dnsTime' in metrics ? (metrics as any).dnsTime : 0);
+              if (typeof dnsTime === 'number') {
+                allTimes.push(dnsTime);
+                if (dnsTime < fastestTime && dnsTime > 0) {
+                  fastestTime = dnsTime;
+                  fastestProvider = provider;
+                }
+              }
+            });
+          });
+
+          const averageTime = allTimes.length > 0 ? Math.round(allTimes.reduce((a, b) => a + b, 0) / allTimes.length) : 0;
+
+          // Send notification if user is authenticated
+          if (ctx.user) {
+            await notifyDnsTestComplete(
+              ctx.user.id,
+              domains,
+              fastestProvider || 'Unknown',
+              averageTime
+            );
+          }
+
+          return results;
+        } catch (error) {
+          // Send error notification
+          if (ctx.user) {
+            await notifyDnsTestFailed(
+              ctx.user.id,
+              domains[0] || 'unknown',
+              error instanceof Error ? error.message : 'Unknown error'
+            );
+          }
+          throw error;
+        }
       }),
 
     providers: publicProcedure.query(() => {
@@ -48,6 +107,67 @@ export const appRouter = router({
         ip,
       }));
     }),
+  }),
+
+  notifications: router({
+    list: protectedProcedure
+      .input(
+        z.object({
+          includeRead: z.boolean().default(true),
+        })
+      )
+      .query(async ({ ctx, input }) => {
+        if (!ctx.user) throw new Error("Unauthorized");
+        return await getUserNotifications(ctx.user.id, input.includeRead);
+      }),
+
+    unreadCount: protectedProcedure.query(async ({ ctx }) => {
+      if (!ctx.user) throw new Error("Unauthorized");
+      return await getUnreadNotificationCount(ctx.user.id);
+    }),
+
+    markAsRead: protectedProcedure
+      .input(z.object({ notificationId: z.number() }))
+      .mutation(async ({ input }) => {
+        return await markNotificationAsRead(input.notificationId);
+      }),
+
+    markAllAsRead: protectedProcedure.mutation(async ({ ctx }) => {
+      if (!ctx.user) throw new Error("Unauthorized");
+      return await markAllNotificationsAsRead(ctx.user.id);
+    }),
+
+    dismiss: protectedProcedure
+      .input(z.object({ notificationId: z.number() }))
+      .mutation(async ({ input }) => {
+        return await dismissNotification(input.notificationId);
+      }),
+
+    dismissAll: protectedProcedure.mutation(async ({ ctx }) => {
+      if (!ctx.user) throw new Error("Unauthorized");
+      return await dismissAllNotifications(ctx.user.id);
+    }),
+
+    getPreferences: protectedProcedure.query(async ({ ctx }) => {
+      if (!ctx.user) throw new Error("Unauthorized");
+      return await getNotificationPreferences(ctx.user.id);
+    }),
+
+    updatePreferences: protectedProcedure
+      .input(
+        z.object({
+          emailNotifications: z.number().optional(),
+          pushNotifications: z.number().optional(),
+          soundEnabled: z.number().optional(),
+          dnsTestAlerts: z.number().optional(),
+          proxyStatusAlerts: z.number().optional(),
+          benchmarkAlerts: z.number().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.user) throw new Error("Unauthorized");
+        return await upsertNotificationPreferences(ctx.user.id, input);
+      }),
   }),
 
   proxy: router({
