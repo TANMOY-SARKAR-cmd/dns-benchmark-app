@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { trpc } from '@/lib/trpc';
+import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
@@ -12,43 +13,122 @@ export default function DnsProxy() {
   const [proxyIp, setProxyIp] = useState('');
   const [copied, setCopied] = useState(false);
 
-  const configQuery = trpc.proxy.getConfig.useQuery();
-  const statsQuery = trpc.proxy.getStats.useQuery();
-  const logsQuery = trpc.proxy.getQueryLogs.useQuery({ limit: 50 });
-  const updateConfigMutation = trpc.proxy.updateConfig.useMutation();
+  const [config, setConfig] = useState<any>(null);
+  const [stats, setStats] = useState<any>(null);
+  const [logs, setLogs] = useState<any[]>([]);
+  const [isUpdating, setIsUpdating] = useState(false);
 
-  const config = configQuery.data;
-  const stats = statsQuery.data;
-  const logs = logsQuery.data;
+  const fetchConfig = useCallback(async () => {
+    const { data } = await supabase.from('proxy_config').select('*').limit(1).single();
+    if (data) setConfig(data);
+  }, []);
+
+  const fetchStats = useCallback(async () => {
+    const { data } = await supabase.from('proxy_stats').select('*').limit(1).single();
+    if (data) {
+      const total = data.total_queries || 0;
+      const hits = data.cache_hits || 0;
+      setStats({
+        totalQueries: total,
+        cachedQueries: hits,
+        cacheHitRate: total > 0 ? Math.round((hits / total) * 100) : 0,
+        mostUsedProvider: data.active_provider || 'Google DNS',
+        averageResolutionTime: 0
+      });
+    }
+  }, []);
+
+  const fetchLogs = useCallback(async () => {
+    const { data } = await supabase.from('dns_queries').select('*').order('created_at', { ascending: false }).limit(50);
+    if (data) {
+      setLogs(data.map((log: any) => ({
+        id: log.id,
+        domain: log.domain,
+        provider: log.upstream_provider,
+        resolutionTime: log.latency_ms,
+        cachedResult: log.cached ? 1 : 0
+      })));
+    }
+  }, []);
 
   useEffect(() => {
-    if (config?.proxyIp) {
-      setProxyIp(config.proxyIp);
+    fetchConfig();
+    fetchStats();
+    fetchLogs();
+  }, [fetchConfig, fetchStats, fetchLogs]);
+
+  useEffect(() => {
+    if (config?.proxy_ip) {
+      setProxyIp(config.proxy_ip);
+    } else {
+      setProxyIp('127.0.0.1'); // Default local proxy IP
     }
   }, [config]);
 
+  // Setup Realtime subscriptions
+  useEffect(() => {
+    const logsSubscription = supabase
+      .channel('dns_queries_changes')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'dns_queries' }, payload => {
+        setLogs(current => {
+          const newLog = {
+            id: payload.new.id,
+            domain: payload.new.domain,
+            provider: payload.new.upstream_provider,
+            resolutionTime: payload.new.latency_ms,
+            cachedResult: payload.new.cached ? 1 : 0
+          };
+          return [newLog, ...current].slice(0, 50); // keep last 50
+        });
+      })
+      .subscribe();
+
+    const statsSubscription = supabase
+      .channel('proxy_stats_changes')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'proxy_stats' }, payload => {
+         fetchStats();
+      })
+      .subscribe();
+
+    const configSubscription = supabase
+      .channel('proxy_config_changes')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'proxy_config' }, payload => {
+         fetchConfig();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(logsSubscription);
+      supabase.removeChannel(statsSubscription);
+      supabase.removeChannel(configSubscription);
+    };
+  }, []);
+
   const handleToggleProxy = async () => {
     if (!config) return;
+    setIsUpdating(true);
     try {
-      await updateConfigMutation.mutateAsync({
-        isEnabled: config.isEnabled === 1 ? 0 : 1,
-      });
-      toast.success(`DNS Proxy ${config.isEnabled === 1 ? 'disabled' : 'enabled'}`);
-      configQuery.refetch();
+      const newEnabledState = !config.is_enabled;
+      const { error } = await supabase.from('proxy_config').update({ is_enabled: newEnabledState, updated_at: new Date().toISOString() }).eq('id', config.id);
+      if (error) throw error;
+      toast.success(`DNS Proxy ${newEnabledState === false ? 'disabled' : 'enabled'}`);
     } catch (error) {
       toast.error('Failed to update proxy configuration');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
   const handleUpdateProvider = async (provider: string) => {
+    setIsUpdating(true);
     try {
-      await updateConfigMutation.mutateAsync({
-        fastestProvider: provider,
-      });
+      const { error } = await supabase.from('proxy_config').update({ fastest_provider: provider, updated_at: new Date().toISOString() }).eq('id', config.id);
+      if (error) throw error;
       toast.success(`Fastest provider updated to ${provider}`);
-      configQuery.refetch();
     } catch (error) {
       toast.error('Failed to update provider');
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -89,15 +169,15 @@ export default function DnsProxy() {
                     Proxy Status
                   </span>
                   <Switch
-                    checked={config?.isEnabled === 1}
+                    checked={config?.is_enabled === true}
                     onCheckedChange={handleToggleProxy}
-                    disabled={updateConfigMutation.isPending}
+                    disabled={isUpdating}
                   />
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center gap-3 p-4 bg-purple-50 rounded-lg border border-purple-200">
-                  {config?.isEnabled === 1 ? (
+                  {config?.is_enabled === true ? (
                     <>
                       <CheckCircle2 className="w-5 h-5 text-green-600" />
                       <span className="text-slate-900 font-semibold">DNS Proxy is Active</span>
@@ -146,7 +226,7 @@ export default function DnsProxy() {
                 </div>
                 <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
                   <p className="text-sm text-slate-700">
-                    <strong>Default Port:</strong> {config?.proxyPort || 53}
+                    <strong>Default Port:</strong> {config?.proxy_port || 53}
                   </p>
                 </div>
               </CardContent>
@@ -162,9 +242,9 @@ export default function DnsProxy() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <Select
-                  value={config?.fastestProvider || 'Google DNS'}
+                  value={config?.fastest_provider || 'Google DNS'}
                   onValueChange={handleUpdateProvider}
-                  disabled={updateConfigMutation.isPending}
+                  disabled={isUpdating}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select a provider" />
@@ -178,7 +258,7 @@ export default function DnsProxy() {
                   </SelectContent>
                 </Select>
                 <p className="text-sm text-slate-600">
-                  Current provider: <strong>{config?.fastestProvider || 'Not set'}</strong>
+                  Current provider: <strong>{config?.fastest_provider || 'Not set'}</strong>
                 </p>
               </CardContent>
             </Card>
@@ -274,11 +354,16 @@ export default function DnsProxy() {
                 <CardContent>
                   <div className="space-y-2 max-h-64 overflow-y-auto">
                     {logs.slice(0, 10).map((log) => (
-                      <div key={log.id} className="text-xs p-2 bg-slate-50 rounded">
-                        <p className="font-mono text-slate-900 truncate">{log.domain}</p>
-                        <p className="text-slate-600">
-                          {log.provider} • {log.resolutionTime}ms
-                        </p>
+                      <div key={log.id} className="text-xs p-2 bg-slate-50 rounded flex justify-between">
+                        <div>
+                          <p className="font-mono text-slate-900 truncate max-w-[120px]" title={log.domain}>{log.domain}</p>
+                          <p className="text-slate-600">
+                            {log.provider}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-slate-900 font-semibold">{log.cachedResult ? 'Cached' : `${log.resolutionTime || 0}ms`}</p>
+                        </div>
                       </div>
                     ))}
                   </div>

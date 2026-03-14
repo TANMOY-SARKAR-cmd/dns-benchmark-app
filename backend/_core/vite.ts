@@ -25,15 +25,15 @@ export async function setupVite(app: Express, server: Server) {
     const url = req.originalUrl;
 
     try {
-      const clientTemplate = path.resolve(
+      const frontendTemplate = path.resolve(
         import.meta.dirname,
         "../..",
-        "client",
+        "frontend",
         "index.html"
       );
 
       // always reload the index.html file from disk incase it changes
-      let template = await fs.promises.readFile(clientTemplate, "utf-8");
+      let template = await fs.promises.readFile(frontendTemplate, "utf-8");
       template = template.replace(
         `src="/src/main.tsx"`,
         `src="/src/main.tsx?v=${nanoid()}"`
@@ -54,7 +54,7 @@ export function serveStatic(app: Express) {
       : path.resolve(import.meta.dirname, "public");
   if (!fs.existsSync(distPath)) {
     console.error(
-      `Could not find the build directory: ${distPath}, make sure to build the client first`
+      `Could not find the build directory: ${distPath}, make sure to build the frontend first`
     );
   }
 

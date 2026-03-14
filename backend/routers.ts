@@ -2,9 +2,16 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
-import { testDomains, DNS_PROVIDERS } from "./dns";
-import { getDnsProxyConfig, updateDnsProxyConfig, getDnsQueryLogs, getQueryStatsSummary } from "./dnsProxyDb";
 import { z } from "zod";
+
+// Move provider config to backend for router usage since dns.ts was moved
+export const DNS_PROVIDERS = {
+  'Google DNS': '8.8.8.8',
+  'Cloudflare DNS': '1.1.1.1',
+  'OpenDNS': '208.67.222.222',
+  'Quad9 DNS': '9.9.9.9',
+  'AdGuard DNS': '94.140.14.14',
+} as const;
 
 export const appRouter = router({
   system: systemRouter,
@@ -35,6 +42,7 @@ export const appRouter = router({
           throw new Error("No valid domains provided");
         }
 
+        const { testDomains } = await import("../dns-proxy/dns");
         const results = await testDomains(domains);
         return results;
       }),
@@ -48,35 +56,7 @@ export const appRouter = router({
   }),
 
   proxy: router({
-    getConfig: protectedProcedure.query(async ({ ctx }) => {
-      if (!ctx.user) throw new Error("Unauthorized");
-      return getDnsProxyConfig(ctx.user.id);
-    }),
-
-    updateConfig: protectedProcedure
-      .input(
-        z.object({
-          isEnabled: z.number().optional(),
-          fastestProvider: z.string().optional(),
-          cacheTtl: z.number().optional(),
-        })
-      )
-      .mutation(async ({ ctx, input }) => {
-        if (!ctx.user) throw new Error("Unauthorized");
-        return updateDnsProxyConfig(ctx.user.id, input);
-      }),
-
-    getQueryLogs: protectedProcedure
-      .input(z.object({ limit: z.number().default(100) }))
-      .query(async ({ ctx, input }) => {
-        if (!ctx.user) throw new Error("Unauthorized");
-        return getDnsQueryLogs(ctx.user.id, input.limit);
-      }),
-
-    getStats: protectedProcedure.query(async ({ ctx }) => {
-      if (!ctx.user) throw new Error("Unauthorized");
-      return getQueryStatsSummary(ctx.user.id);
-    }),
+    // Config is accessed directly via Supabase on frontend
   }),
 });
 

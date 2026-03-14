@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { trpc } from '@/lib/trpc';
+import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
@@ -19,6 +20,57 @@ export default function Home() {
 
   const testMutation = trpc.dns.test.useMutation();
   const providersQuery = trpc.dns.providers.useQuery();
+
+  // Load historical benchmark results
+  useEffect(() => {
+    const fetchRecentBenchmarks = async () => {
+      const { data, error } = await supabase
+        .from('benchmark_results')
+        .select('*')
+        .order('tested_at', { ascending: false })
+        .limit(100);
+
+      if (data && data.length > 0) {
+        const historicalResults: TestResults = {};
+
+        // Group by domain and provider to rebuild the latest test view
+        // Fallback to "Background Benchmark" since the new schema dropped the domain column
+        data.forEach((row) => {
+          const domainKey = row.domain || 'Background Benchmark';
+          if (!historicalResults[domainKey]) {
+            historicalResults[domainKey] = {};
+          }
+          if (historicalResults[domainKey][row.provider] === undefined) {
+             historicalResults[domainKey][row.provider] = row.latency_ms;
+          }
+        });
+        setTestResults(historicalResults);
+      }
+    };
+    fetchRecentBenchmarks();
+  }, []);
+
+  // Listen for real-time benchmark updates
+  useEffect(() => {
+    const benchmarkSubscription = supabase
+      .channel('benchmark_results_changes')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'benchmark_results' }, payload => {
+        setTestResults(prev => {
+           const current = prev ? { ...prev } : {};
+           const domainKey = payload.new.domain || 'Background Benchmark';
+           if (!current[domainKey]) {
+             current[domainKey] = {};
+           }
+           current[domainKey][payload.new.provider] = payload.new.latency_ms;
+           return current;
+        });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(benchmarkSubscription);
+    };
+  }, []);
 
   const handleTest = async () => {
     // Parse domains
