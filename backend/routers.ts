@@ -1,12 +1,11 @@
-import { COOKIE_NAME } from "@shared/const";
+import { COOKIE_NAME } from "../shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
-import { testDomains, DNS_PROVIDERS } from "./dns";
-import { getDnsProxy } from "./dnsProxy";
-import { getDnsQueryLogs } from "./services/queryLogger";
-import { getProxyStats } from "./services/proxyStats";
-import { supabase } from "./supabaseClient";
+import { testDomains, DNS_PROVIDERS } from "../dns-proxy/dns";
+import { getDnsQueryLogs } from "../shared/services/queryLogger";
+import { getProxyStats } from "../shared/services/proxyStats";
+import { supabase } from "../shared/supabaseClient";
 import { z } from "zod";
 
 export const appRouter = router({
@@ -99,18 +98,6 @@ export const appRouter = router({
           throw new Error("Failed to update config");
         }
 
-        const proxy = getDnsProxy();
-        if (config.is_enabled === 1) {
-          if (config.fastest_provider) {
-            proxy.config.fastestProvider = config.fastest_provider;
-          }
-          if (config.cache_ttl) {
-            proxy.config.cacheTtl = config.cache_ttl;
-          }
-          await proxy.start().catch(console.error);
-        } else {
-          await proxy.stop();
-        }
         return config;
       }),
 
@@ -133,7 +120,7 @@ export const appRouter = router({
         cachedQueries: hits,
         cacheHitRate: hitRate,
         mostUsedProvider: dbStats?.active_provider || "Google DNS",
-        averageResolutionTime: 0, // Will need a separate query to compute avg latency from dns_queries if desired, or can be added to proxyStats
+        averageResolutionTime: 0,
       };
     }),
   }),

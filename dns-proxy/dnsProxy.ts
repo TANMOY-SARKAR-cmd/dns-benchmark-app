@@ -1,9 +1,9 @@
 import dgram from "dgram";
 import dnsPacket from "dns-packet";
 import { DNS_PROVIDERS, testDomains } from "./dns";
-import { logDnsQuery } from "./services/queryLogger";
-import { incrementProxyStat } from "./services/proxyStats";
-import { logBenchmarkResult } from "./services/benchmarkLogger";
+import { logDnsQuery } from "../shared/services/queryLogger";
+import { incrementProxyStat } from "../shared/services/proxyStats";
+import { logBenchmarkResult } from "../shared/services/benchmarkLogger";
 
 interface DnsCache {
   [key: string]: {

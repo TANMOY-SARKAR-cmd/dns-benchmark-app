@@ -1,4 +1,4 @@
-import { supabase } from "../supabaseClient";
+import { supabase } from "../../shared/supabaseClient";
 
 export async function logDnsQuery(query: {
   userId: string;
