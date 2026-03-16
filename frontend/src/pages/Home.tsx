@@ -35,6 +35,9 @@ export default function Home() {
 
   const testMutation = trpc.dns.test.useMutation();
   const providersQuery = trpc.dns.providers.useQuery();
+  const configQuery = trpc.proxy.getConfig.useQuery(undefined, {
+    retry: false
+  });
 
   // Load historical benchmark results
   useEffect(() => {
@@ -438,9 +441,15 @@ export default function Home() {
             <p className="text-slate-500 mb-6">
               Enter domains above and click "Run DNS Test" to get started
             </p>
-            <a href="/proxy">
-              <Button variant="outline">View DNS Proxy Configuration →</Button>
-            </a>
+            {configQuery.isError ? (
+              <p className="text-sm text-amber-600 max-w-md mx-auto">
+                DNS Proxy server is not available in this deployment. The proxy feature requires a dedicated backend server.
+              </p>
+            ) : (
+              <a href="/proxy">
+                <Button variant="outline">View DNS Proxy Configuration →</Button>
+              </a>
+            )}
           </div>
         )}
       </div>

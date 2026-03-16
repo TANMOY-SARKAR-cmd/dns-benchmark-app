@@ -32,9 +32,17 @@ export default function DnsProxy() {
   const [proxyIp, setProxyIp] = useState("");
   const [copied, setCopied] = useState(false);
 
-  const configQuery = trpc.proxy.getConfig.useQuery();
-  const statsQuery = trpc.proxy.getStats.useQuery();
-  const logsQuery = trpc.proxy.getQueryLogs.useQuery({ limit: 50 });
+  const configQuery = trpc.proxy.getConfig.useQuery(undefined, {
+    retry: false
+  });
+  const statsQuery = trpc.proxy.getStats.useQuery(undefined, {
+    retry: false,
+    enabled: !configQuery.isError
+  });
+  const logsQuery = trpc.proxy.getQueryLogs.useQuery({ limit: 50 }, {
+    retry: false,
+    enabled: !configQuery.isError
+  });
   const updateConfigMutation = trpc.proxy.updateConfig.useMutation();
 
   const config = configQuery.data;
@@ -142,6 +150,34 @@ export default function DnsProxy() {
 
   const providers = trpc.dns.providers.useQuery();
 
+  if (configQuery.isError) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 font-sans">
+        <Card className="max-w-md w-full border-slate-200 shadow-xl">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-slate-800">
+              <Server className="w-5 h-5 text-purple-600" />
+              Backend Unavailable
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="p-4 bg-amber-50 rounded-lg border border-amber-200 mb-6">
+              <p className="text-amber-800 font-medium">
+                DNS Proxy server is not available in this deployment. The proxy feature requires a dedicated backend server.
+              </p>
+            </div>
+            <p className="text-slate-600 mb-6 text-sm">
+              This feature requires running the backend DNS proxy server locally or on a VPS.
+            </p>
+            <a href="/">
+              <Button className="w-full">Return to Dashboard</Button>
+            </a>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-purple-50 to-slate-50">
       {/* Header */}
@@ -164,6 +200,12 @@ export default function DnsProxy() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Main Configuration */}
           <div className="lg:col-span-2 space-y-8">
+            <div className="p-4 bg-blue-50 rounded-lg border border-blue-200 mb-6">
+              <p className="text-sm text-blue-800">
+                <strong>Notice:</strong> This feature requires running the backend DNS proxy server locally or on a VPS.
+              </p>
+            </div>
+
             {/* Proxy Status */}
             <Card className="border-slate-200 shadow-lg">
               <CardHeader>
