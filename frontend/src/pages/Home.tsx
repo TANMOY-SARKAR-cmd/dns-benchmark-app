@@ -12,6 +12,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { measureDoH, DOH_PROVIDERS, BenchmarkResult } from "@/lib/doh";
 import { supabase } from "@/lib/supabase";
+import { isSupabaseConfigured } from "@/config/env";
 import {
   BarChart,
   Bar,
@@ -188,7 +189,9 @@ export default function Home() {
       toast.success("Benchmark completed successfully");
 
       // Save to Supabase
-      if (allQueries.length > 0) {
+      if (!isSupabaseConfigured) {
+        toast.info("Supabase not configured — results not saved");
+      } else if (allQueries.length > 0) {
         // Insert queries in batches of 50
         for (let i = 0; i < allQueries.length; i += 50) {
           await supabase
@@ -562,7 +565,7 @@ export default function Home() {
               <CardContent>
                 {liveLogs.length === 0 ? (
                   <div className="text-center py-8 text-slate-500">
-                    Waiting for queries...
+                    {isSupabaseConfigured ? "Waiting for queries... Run a benchmark to see live results here." : "Supabase is not configured. Live logs are disabled."}
                   </div>
                 ) : (
                   <div className="space-y-2">
