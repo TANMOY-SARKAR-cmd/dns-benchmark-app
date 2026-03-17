@@ -214,7 +214,11 @@ export default function DnsProxy() {
                     <Zap className="w-5 h-5 text-purple-600" />
                     Proxy Status
                   </span>
-                  <Switch disabled />
+                  <Switch
+                    checked={config?.is_enabled === 1}
+                    onCheckedChange={handleToggleProxy}
+                    disabled={updateConfigMutation.isPending || configQuery.isLoading}
+                  />
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -273,7 +277,10 @@ export default function DnsProxy() {
                 </div>
                 <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
                   <p className="text-sm text-slate-700">
-                    <strong>Default Port:</strong> {config?.proxy_port || 53}
+                    <strong>Default Port:</strong> {config?.proxy_port || 5353}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-2">
+                    Note: To use standard port 53 on Linux/macOS, run the backend with sudo or use setcap cap_net_bind_service=+ep on the binary.
                   </p>
                 </div>
               </CardContent>

@@ -127,3 +127,23 @@ To use the smart proxy, enable the proxy from the dashboard and point your devic
 - **macOS:** System Settings > Network > Wi-Fi/Ethernet > Details > DNS > Add `127.0.0.1`.
 - **Windows:** Settings > Network & Internet > Properties > DNS server assignment > Edit > Add `127.0.0.1`.
 - **Linux:** Edit `/etc/resolv.conf` to add `nameserver 127.0.0.1`.
+
+### 5. DNS Proxy Port Note
+The smart proxy server defaults to port `5353` for non-root users because port 53 requires administrator or root privileges. If you want to use the standard DNS port (53) without running the application as root, you can forward port 53 to 5353 on your machine:
+
+**Linux (using iptables):**
+```bash
+sudo iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-port 5353
+sudo iptables -t nat -A PREROUTING -p tcp --dport 53 -j REDIRECT --to-port 5353
+```
+
+**macOS (using pfctl):**
+1. Create a file `/etc/pf.anchors/dns.forwarding` with:
+   ```pf
+   rdr pass on lo0 inet proto udp from any to any port 53 -> 127.0.0.1 port 5353
+   rdr pass on lo0 inet proto tcp from any to any port 53 -> 127.0.0.1 port 5353
+   ```
+2. Enable it:
+   ```bash
+   sudo pfctl -ef /etc/pf.anchors/dns.forwarding
+   ```
