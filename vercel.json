@@ -1,9 +1,9 @@
 {
-  "buildCommand": "pnpm --filter frontend build",
+  "buildCommand": "pnpm --dir frontend run build",
   "outputDirectory": "frontend/dist",
   "rewrites": [
-    { "source": "/api/trpc/:path*", "destination": "/api/trpc" },
-    { "source": "/api/health", "destination": "/api/trpc" },
+    { "source": "/api/trpc/:path*", "destination": "/api/trpc/:path*" },
+    { "source": "/api/health", "destination": "/api/trpc/health" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

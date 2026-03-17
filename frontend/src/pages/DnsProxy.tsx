@@ -33,16 +33,19 @@ export default function DnsProxy() {
   const [copied, setCopied] = useState(false);
 
   const configQuery = trpc.proxy.getConfig.useQuery(undefined, {
-    retry: false
+    retry: false,
   });
   const statsQuery = trpc.proxy.getStats.useQuery(undefined, {
     retry: false,
-    enabled: !configQuery.isError
+    enabled: configQuery.isSuccess,
   });
-  const logsQuery = trpc.proxy.getQueryLogs.useQuery({ limit: 50 }, {
-    retry: false,
-    enabled: !configQuery.isError
-  });
+  const logsQuery = trpc.proxy.getQueryLogs.useQuery(
+    { limit: 50 },
+    {
+      retry: false,
+      enabled: configQuery.isSuccess,
+    }
+  );
   const updateConfigMutation = trpc.proxy.updateConfig.useMutation();
 
   const config = configQuery.data;
@@ -163,11 +166,13 @@ export default function DnsProxy() {
           <CardContent>
             <div className="p-4 bg-amber-50 rounded-lg border border-amber-200 mb-6">
               <p className="text-amber-800 font-medium">
-                DNS Proxy server is not available in this deployment. The proxy feature requires a dedicated backend server.
+                DNS Proxy server is not available in this deployment. The proxy
+                feature requires a dedicated backend server.
               </p>
             </div>
             <p className="text-slate-600 mb-6 text-sm">
-              This feature requires running the backend DNS proxy server locally or on a VPS.
+              This feature requires running the backend DNS proxy server locally
+              or on a VPS.
             </p>
             <a href="/">
               <Button className="w-full">Return to Dashboard</Button>
@@ -202,16 +207,21 @@ export default function DnsProxy() {
           <div className="lg:col-span-2 space-y-8">
             <div className="p-4 bg-blue-50 rounded-lg border border-blue-200 mb-6">
               <p className="text-sm text-blue-800">
-                <strong>Notice:</strong> DNS Proxy requires a persistent Node.js server with UDP access. This feature cannot run on serverless platforms like Vercel.
+                <strong>Notice:</strong> DNS Proxy requires a persistent Node.js
+                server with UDP access. This feature cannot run on serverless
+                platforms like Vercel.
               </p>
             </div>
 
             {/* Proxy Status */}
             <Card className="border-slate-200 shadow-lg">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Zap className="w-5 h-5 text-purple-600" />
-                  Proxy Status
+                <CardTitle className="flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Zap className="w-5 h-5 text-purple-600" />
+                    Proxy Status
+                  </span>
+                  <Switch disabled />
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">

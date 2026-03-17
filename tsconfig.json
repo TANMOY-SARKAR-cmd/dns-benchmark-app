@@ -1,5 +1,11 @@
 {
-  "include": ["frontend/src/**/*", "shared/**/*", "backend/**/*", "api/**/*", "dns-proxy/**/*"],
+  "include": [
+    "frontend/src/**/*",
+    "shared/**/*",
+    "backend/**/*",
+    "api/**/*",
+    "dns-proxy/**/*"
+  ],
   "exclude": ["node_modules", "build", "dist", "**/*.test.ts"],
   "compilerOptions": {
     "incremental": true,

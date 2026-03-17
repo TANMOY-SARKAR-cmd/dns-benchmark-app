@@ -5,6 +5,9 @@ import { createContext } from "../backend/_core/context";
 
 const app = express();
 
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 app.use(
   "/api/trpc",
   createExpressMiddleware({
