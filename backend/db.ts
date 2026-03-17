@@ -26,7 +26,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   if (user.lastSignedIn !== undefined) {
     values.lastSignedIn = user.lastSignedIn;
   } else {
-    values.lastSignedIn = new Date().toISOString();
+    values.lastSignedIn = new Date();
   }
 
   if (user.role !== undefined) {

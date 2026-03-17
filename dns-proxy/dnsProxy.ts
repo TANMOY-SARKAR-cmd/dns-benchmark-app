@@ -35,7 +35,7 @@ export class DnsProxyServer {
 
   constructor(config: Partial<ProxyConfig> = {}) {
     this.config = {
-      port: config.port || 53,
+      port: config.port || 5353,
       cacheTtl: config.cacheTtl || 3600,
       fastestProvider: config.fastestProvider || "Google DNS",
     };
@@ -359,7 +359,7 @@ export class DnsProxyServer {
 
     // Also save fastest provider to proxy config in Supabase
     try {
-      import("./supabaseClient").then(({ supabase }) => {
+      import("../shared/supabaseClient").then(({ supabase }) => {
         supabase
           .from("proxy_config")
           .update({
