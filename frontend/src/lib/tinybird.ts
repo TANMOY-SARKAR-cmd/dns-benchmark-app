@@ -64,8 +64,6 @@ export const topPages = defineEndpoint("top_pages", {
   params: {
     date_from: p.dateTime().optional('2026-03-17T17:48:01.723Z'),
     date_to: p.dateTime().optional('2026-03-16T17:48:01.723Z'),
-    date_from: p.dateTime().optional('2026-03-17T17:18:35.011Z'),
-    date_to: p.dateTime().optional('2026-03-16T17:18:35.011Z'),
     limit: p.int32().optional(10),
   },
   nodes: [
@@ -76,8 +74,6 @@ export const topPages = defineEndpoint("top_pages", {
         FROM page_views
         WHERE timestamp >= parseDateTimeBestEffort({{String(date_from, '2026-03-17T17:48:01.723Z', required=False)}})
           AND timestamp <= parseDateTimeBestEffort({{String(date_to, '2026-03-16T17:48:01.723Z', required=False)}})
-        WHERE timestamp >= parseDateTimeBestEffort({{String(date_from, '2026-03-17T17:18:35.011Z', required=False)}})
-          AND timestamp <= parseDateTimeBestEffort({{String(date_to, '2026-03-16T17:18:35.011Z', required=False)}})
         GROUP BY pathname
         ORDER BY views DESC
         LIMIT {{Int32(limit, 10)}}
