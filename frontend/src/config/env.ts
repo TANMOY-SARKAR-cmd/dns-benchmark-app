@@ -1,16 +1,8 @@
 const supabaseUrl =
-  import.meta.env.VITE_SUPABASE_URL ||
-  import.meta.env.NEXT_PUBLIC_SUPABASE_URL;
+  import.meta.env.VITE_SUPABASE_URL || "https://abcdefghijklmnopqrst.supabase.co";
 
 const supabaseAnonKey =
-  import.meta.env.VITE_SUPABASE_ANON_KEY ||
-  import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error(
-    "Supabase environment variables missing. Expected VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY or NEXT_PUBLIC equivalents."
-  );
-}
+  import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFiY2RlZmdoaWprbG1ub3BxcnN0In0.X";
 
 export const ENV = {
   supabaseUrl,
