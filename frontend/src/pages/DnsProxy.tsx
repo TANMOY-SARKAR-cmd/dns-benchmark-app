@@ -214,11 +214,7 @@ export default function DnsProxy() {
                     <Zap className="w-5 h-5 text-purple-600" />
                     Proxy Status
                   </span>
-                  <Switch
-                    checked={config?.is_enabled === 1}
-                    onCheckedChange={handleToggleProxy}
-                    disabled={updateConfigMutation.isPending}
-                  />
+                  <Switch disabled />
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
