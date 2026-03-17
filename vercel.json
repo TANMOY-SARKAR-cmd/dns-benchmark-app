@@ -1,9 +1,5 @@
 {
-  "buildCommand": "pnpm --dir frontend run build",
-  "outputDirectory": "frontend/dist",
-  "rewrites": [
-    { "source": "/api/trpc/:path*", "destination": "/api/trpc/:path*" },
-    { "source": "/api/health", "destination": "/api/trpc/health" },
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
+"buildCommand": "pnpm run build",
+"outputDirectory": "frontend/dist",
+"framework": "vite"
 }
