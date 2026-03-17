@@ -7,6 +7,7 @@
 import {
   defineDatasource,
   defineEndpoint,
+  defineToken,
   Tinybird,
   node,
   t,
@@ -16,6 +17,14 @@ import {
   type InferParams,
   type InferOutputRow,
 } from "@tinybirdco/sdk";
+
+// ============================================================================
+// Tokens
+// ============================================================================
+
+export const appToken = defineToken("app_read");
+export const ingestToken = defineToken("ingest_token");
+
 
 // ============================================================================
 // Datasources
@@ -35,6 +44,10 @@ export const pageViews = defineDatasource("page_views", {
   engine: engine.mergeTree({
     sortingKey: ["pathname", "timestamp"],
   }),
+  tokens: [
+    { token: appToken, scope: "READ" },
+    { token: ingestToken, scope: "APPEND" },
+  ],
 });
 
 export type PageViewsRow = InferRow<typeof pageViews>;
@@ -49,6 +62,8 @@ export type PageViewsRow = InferRow<typeof pageViews>;
 export const topPages = defineEndpoint("top_pages", {
   description: "Get the most visited pages",
   params: {
+    date_from: p.dateTime().optional('2026-03-17T17:48:01.723Z'),
+    date_to: p.dateTime().optional('2026-03-16T17:48:01.723Z'),
     date_from: p.dateTime().optional('2026-03-17T17:18:35.011Z'),
     date_to: p.dateTime().optional('2026-03-16T17:18:35.011Z'),
     limit: p.int32().optional(10),
@@ -59,6 +74,8 @@ export const topPages = defineEndpoint("top_pages", {
       sql: `
         SELECT pathname, count() AS views
         FROM page_views
+        WHERE timestamp >= parseDateTimeBestEffort({{String(date_from, '2026-03-17T17:48:01.723Z', required=False)}})
+          AND timestamp <= parseDateTimeBestEffort({{String(date_to, '2026-03-16T17:48:01.723Z', required=False)}})
         WHERE timestamp >= parseDateTimeBestEffort({{String(date_from, '2026-03-17T17:18:35.011Z', required=False)}})
           AND timestamp <= parseDateTimeBestEffort({{String(date_to, '2026-03-16T17:18:35.011Z', required=False)}})
         GROUP BY pathname
@@ -71,6 +88,7 @@ export const topPages = defineEndpoint("top_pages", {
     pathname: t.string(),
     views: t.uint64(),
   },
+  tokens: [{ token: appToken, scope: "READ" }],
 });
 
 export type TopPagesParams = InferParams<typeof topPages>;
