@@ -1,4 +1,4 @@
 import { createClient } from "@supabase/supabase-js";
-import { ENV, isSupabaseConfigured } from "@/config/env";
+import { ENV } from "@/config/env";
 
-export const supabase = isSupabaseConfigured ? createClient(ENV.supabaseUrl, ENV.supabaseAnonKey) : null;
+export const supabase = createClient(ENV.supabaseUrl, ENV.supabaseAnonKey);

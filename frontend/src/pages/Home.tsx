@@ -12,7 +12,6 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { measureDoH, DOH_PROVIDERS, BenchmarkResult } from "@/lib/doh";
 import { supabase } from "@/lib/supabase";
-import { isSupabaseConfigured } from "@/config/env";
 import {
   BarChart,
   Bar,
@@ -65,7 +64,7 @@ export default function Home() {
     fetchHistory();
 
     // Subscribe to live logs
-    if (!supabase) return;
+
 
     const channel = supabase
       .channel("schema-db-changes")
@@ -83,14 +82,14 @@ export default function Home() {
       .subscribe();
 
     return () => {
-      if (supabase) supabase.removeChannel(channel);
+       supabase.removeChannel(channel);
     };
   }, []);
 
   const fetchLeaderboard = async () => {
     try {
-      if (!supabase) return;
-      if (!supabase) return;
+
+
       const { data, error } = await supabase.from("leaderboard").select("*");
       if (error) throw error;
       setLeaderboard(data || []);
@@ -101,7 +100,7 @@ export default function Home() {
 
   const fetchHistory = async () => {
     try {
-      if (!supabase) return;
+
       const { data, error } = await supabase
         .from("benchmark_results")
         .select("*")
@@ -194,12 +193,10 @@ export default function Home() {
       toast.success("Benchmark completed successfully");
 
       // Save to Supabase
-      if (!isSupabaseConfigured) {
-        toast.info("Supabase not configured — results not saved");
-      } else if (allQueries.length > 0) {
+      if (allQueries.length > 0) {
         // Insert queries in batches of 50
         for (let i = 0; i < allQueries.length; i += 50) {
-          if(supabase) await supabase
+           await supabase
             .from("dns_queries")
             .insert(allQueries.slice(i, i + 50));
         }
@@ -225,7 +222,7 @@ export default function Home() {
         );
 
         if (benchmarkResults.length > 0) {
-          if(supabase) await supabase.from("benchmark_results").insert(benchmarkResults);
+           await supabase.from("benchmark_results").insert(benchmarkResults);
         }
 
         fetchLeaderboard();
@@ -570,7 +567,7 @@ export default function Home() {
               <CardContent>
                 {liveLogs.length === 0 ? (
                   <div className="text-center py-8 text-slate-500">
-                    {isSupabaseConfigured ? "Waiting for queries... Run a benchmark to see live results here." : "Supabase is not configured. Live logs are disabled."}
+                    Waiting for queries... Run a benchmark to see live results here.
                   </div>
                 ) : (
                   <div className="space-y-2">
