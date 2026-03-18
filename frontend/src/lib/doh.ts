@@ -49,6 +49,29 @@ export type BenchmarkResult = {
   verified: boolean;
 };
 
+async function fetchWithTimeout(
+  url: string | URL,
+  options: RequestInit,
+  timeoutMs = 2000
+) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const start = performance.now();
+
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      ...options,
+    });
+    const latency = performance.now() - start;
+    clearTimeout(timeout);
+    return { response, latency };
+  } catch (err) {
+    clearTimeout(timeout);
+    return { response: null, latency: null };
+  }
+}
+
 type MethodResult = {
   latency: number;
   success: boolean;
@@ -59,23 +82,22 @@ async function jsonQuery(
   provider: DoHProvider,
   domain: string
 ): Promise<MethodResult> {
-  const startTime = performance.now();
   try {
     const url = new URL(provider.url);
     url.searchParams.set("name", domain);
     url.searchParams.set("type", "A");
 
-    const response = await fetch(url.toString(), {
+    const { response, latency } = await fetchWithTimeout(url.toString(), {
       method: "GET",
       headers: {
         Accept: "application/dns-json",
       },
     });
 
-    if (response.ok) {
+    if (response && latency !== null && response.ok) {
       await response.json();
       return {
-        latency: performance.now() - startTime,
+        latency,
         success: true,
         verified: true,
       };
@@ -90,7 +112,6 @@ async function binaryGetQuery(
   provider: DoHProvider,
   domain: string
 ): Promise<MethodResult> {
-  const startTime = performance.now();
   try {
     const packet = dnsPacket.encode({
       type: "query",
@@ -115,7 +136,7 @@ async function binaryGetQuery(
     const url = new URL(provider.url);
     url.searchParams.set("dns", base64url);
 
-    const response = await fetch(url.toString(), {
+    const { response, latency } = await fetchWithTimeout(url.toString(), {
       method: "GET",
       headers: {
         Accept: "application/dns-message",
@@ -123,10 +144,15 @@ async function binaryGetQuery(
       mode: "no-cors",
     });
 
-    if (response.type === "opaque" || response.ok) {
+    if (
+      response &&
+      latency !== null &&
+      (response.type === "opaque" || response.ok)
+    ) {
       return {
-        latency: performance.now() - startTime,
+        latency,
         success: true,
+        // If opaque, we can't verify the body, but network request succeeded
         verified: false,
       };
     }
@@ -140,7 +166,6 @@ async function binaryPostQuery(
   provider: DoHProvider,
   domain: string
 ): Promise<MethodResult> {
-  const startTime = performance.now();
   try {
     const packet = dnsPacket.encode({
       type: "query",
@@ -154,7 +179,7 @@ async function binaryPostQuery(
       ],
     });
 
-    const response = await fetch(provider.url, {
+    const { response, latency } = await fetchWithTimeout(provider.url, {
       method: "POST",
       headers: {
         "Content-Type": "application/dns-message",
@@ -163,10 +188,10 @@ async function binaryPostQuery(
       body: new Uint8Array(packet),
     });
 
-    if (response.ok) {
+    if (response && latency !== null && response.ok) {
       dnsPacket.decode(new Uint8Array(await response.arrayBuffer()) as any);
       return {
-        latency: performance.now() - startTime,
+        latency,
         success: true,
         verified: true,
       };
@@ -180,7 +205,7 @@ async function binaryPostQuery(
 export async function measureDoH(
   provider: DoHProvider,
   domain: string,
-  retries = 4
+  retries = 3
 ): Promise<BenchmarkResult> {
   const latencies: number[] = [];
   let successCount = 0;
