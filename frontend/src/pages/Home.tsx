@@ -152,35 +152,37 @@ export default function Home() {
           batchDomains.map(async domain => {
             results[domain] = {};
 
-            for (const provider of DOH_PROVIDERS) {
-              setProgressText(`Testing ${domain} on ${provider.name}...`);
+            await Promise.all(
+              DOH_PROVIDERS.map(async provider => {
+                setProgressText(`Testing ${domain} on ${provider.name}...`);
 
-              try {
-                const result = await measureDoH(provider, domain);
-                results[domain][provider.name] = result;
+                try {
+                  const result = await measureDoH(provider, domain);
+                  results[domain][provider.name] = result;
 
-                if (result.successRate > 0) {
+                  if (result.successRate > 0) {
+                    allQueries.push({
+                      user_id: "anonymous",
+                      domain,
+                      provider: provider.name,
+                      latency_ms: result.avgLatency,
+                      success: true,
+                    });
+                  }
+                } catch (error) {
+                  results[domain][provider.name] = "Error";
                   allQueries.push({
                     user_id: "anonymous",
                     domain,
                     provider: provider.name,
-                    latency_ms: result.avgLatency,
-                    success: true,
+                    latency_ms: 0,
+                    success: false,
                   });
                 }
-              } catch (error) {
-                results[domain][provider.name] = "Error";
-                allQueries.push({
-                  user_id: "anonymous",
-                  domain,
-                  provider: provider.name,
-                  latency_ms: 0,
-                  success: false,
-                });
-              }
-              completed++;
-              setProgress(Math.round((completed / total) * 100));
-            }
+                completed++;
+                setProgress(Math.round((completed / total) * 100));
+              })
+            );
           })
         );
       }
@@ -522,8 +524,7 @@ export default function Home() {
                                     >
                                       {isError ? (
                                         <span className="text-red-500 flex items-center justify-center gap-1 text-xs">
-                                          <AlertCircle className="w-3 h-3" />{" "}
-                                          Err
+                                          ❌ Failed
                                         </span>
                                       ) : (
                                         <div>
