@@ -65,6 +65,8 @@ export default function Home() {
     fetchHistory();
 
     // Subscribe to live logs
+    if (!supabase) return;
+
     const channel = supabase
       .channel("schema-db-changes")
       .on(
@@ -81,12 +83,14 @@ export default function Home() {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      if (supabase) supabase.removeChannel(channel);
     };
   }, []);
 
   const fetchLeaderboard = async () => {
     try {
+      if (!supabase) return;
+      if (!supabase) return;
       const { data, error } = await supabase.from("leaderboard").select("*");
       if (error) throw error;
       setLeaderboard(data || []);
@@ -97,6 +101,7 @@ export default function Home() {
 
   const fetchHistory = async () => {
     try {
+      if (!supabase) return;
       const { data, error } = await supabase
         .from("benchmark_results")
         .select("*")
@@ -194,7 +199,7 @@ export default function Home() {
       } else if (allQueries.length > 0) {
         // Insert queries in batches of 50
         for (let i = 0; i < allQueries.length; i += 50) {
-          await supabase
+          if(supabase) await supabase
             .from("dns_queries")
             .insert(allQueries.slice(i, i + 50));
         }
@@ -220,7 +225,7 @@ export default function Home() {
         );
 
         if (benchmarkResults.length > 0) {
-          await supabase.from("benchmark_results").insert(benchmarkResults);
+          if(supabase) await supabase.from("benchmark_results").insert(benchmarkResults);
         }
 
         fetchLeaderboard();
