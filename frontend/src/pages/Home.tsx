@@ -12,6 +12,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { measureDoH, DOH_PROVIDERS, BenchmarkResult } from "@/lib/doh";
 import { supabase } from "@/lib/supabase";
+import { isSupabaseConfigured } from "@/config/env";
 import {
   BarChart,
   Bar,
@@ -59,13 +60,17 @@ export default function Home() {
   const [liveLogs, setLiveLogs] = useState<any[]>([]);
 
   useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return;
+
+    // Capture non-null reference for use inside the closure
+    const sb = supabase;
+
     // Fetch initial leaderboard and history
     fetchLeaderboard();
     fetchHistory();
 
     // Subscribe to live logs
-
-    const channel = supabase
+    const channel = sb
       .channel("schema-db-changes")
       .on(
         "postgres_changes",
@@ -81,11 +86,12 @@ export default function Home() {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      sb.removeChannel(channel);
     };
   }, []);
 
   const fetchLeaderboard = async () => {
+    if (!supabase) return;
     try {
       const { data, error } = await supabase.from("leaderboard").select("*");
       if (error) throw error;
@@ -96,6 +102,7 @@ export default function Home() {
   };
 
   const fetchHistory = async () => {
+    if (!supabase) return;
     try {
       const { data, error } = await supabase
         .from("benchmark_results")
@@ -116,13 +123,25 @@ export default function Home() {
   };
 
   const handleTest = async () => {
-    const domains = domainsInput
+    // Basic domain validation: strip protocols/paths and reject obviously invalid entries
+    const VALID_DOMAIN_PATTERN =
+      /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
+    const rawDomains = domainsInput
       .split(/[\n,]+/)
-      .map(d => d.trim())
+      .map(d => d.trim().replace(/^https?:\/\//i, "").split("/")[0])
       .filter(d => d.length > 0);
 
+    const domains = rawDomains.filter(d => VALID_DOMAIN_PATTERN.test(d));
+    const invalid = rawDomains.filter(d => !VALID_DOMAIN_PATTERN.test(d));
+
+    if (invalid.length > 0) {
+      toast.warning(
+        `Skipped ${invalid.length} invalid entr${invalid.length === 1 ? "y" : "ies"}: ${invalid.slice(0, 3).join(", ")}${invalid.length > 3 ? "…" : ""}`
+      );
+    }
+
     if (domains.length === 0) {
-      toast.error("Please enter at least one domain");
+      toast.error("Please enter at least one valid domain");
       return;
     }
 
@@ -190,8 +209,8 @@ export default function Home() {
       setTestResults(results);
       toast.success("Benchmark completed successfully");
 
-      // Save to Supabase
-      if (allQueries.length > 0) {
+      // Save to Supabase (only when configured)
+      if (supabase && allQueries.length > 0) {
         // Insert queries in batches of 50
         for (let i = 0; i < allQueries.length; i += 50) {
           await supabase
@@ -267,6 +286,7 @@ export default function Home() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // Prepare chart data
@@ -300,6 +320,7 @@ export default function Home() {
           <Button
             variant="ghost"
             size="icon"
+            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
             onClick={() => setTheme?.(theme === "dark" ? "light" : "dark")}
           >
             {theme === "dark" ? (
@@ -568,34 +589,55 @@ export default function Home() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {liveLogs.length === 0 ? (
+                {!isSupabaseConfigured ? (
+                  <div className="text-center py-8 text-slate-500 flex flex-col items-center gap-2">
+                    <AlertCircle className="w-6 h-6 text-yellow-500" />
+                    <p>
+                      Live logs require Supabase. Configure{" "}
+                      <code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 rounded">
+                        VITE_SUPABASE_URL
+                      </code>{" "}
+                      and{" "}
+                      <code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 rounded">
+                        VITE_SUPABASE_ANON_KEY
+                      </code>{" "}
+                      to enable this feature.
+                    </p>
+                  </div>
+                ) : liveLogs.length === 0 ? (
                   <div className="text-center py-8 text-slate-500">
                     Waiting for queries... Run a benchmark to see live results
                     here.
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {liveLogs.map((log, i) => (
-                      <div
-                        key={i}
-                        className="flex justify-between items-center p-3 bg-slate-100 dark:bg-slate-900 rounded-md text-sm"
-                      >
-                        <div className="flex items-center gap-4">
-                          <span className="font-mono text-slate-500">
-                            {new Date(
-                              log.timestamp || log.created_at
-                            ).toLocaleTimeString()}
-                          </span>
-                          <span className="font-semibold">{log.provider}</span>
-                          <span className="font-mono">{log.domain}</span>
-                        </div>
+                    {liveLogs.map((log, i) => {
+                      const rawTimestamp = log.timestamp || log.created_at;
+                      const date = rawTimestamp ? new Date(rawTimestamp) : null;
+                      const timeLabel =
+                        date && !isNaN(date.getTime())
+                          ? date.toLocaleTimeString()
+                          : "—";
+                      return (
                         <div
-                          className={`font-semibold ${log.success ? "text-green-600" : "text-red-600"}`}
+                          key={i}
+                          className="flex justify-between items-center p-3 bg-slate-100 dark:bg-slate-900 rounded-md text-sm"
                         >
-                          {log.success ? `${log.latency_ms}ms` : "Failed"}
+                          <div className="flex items-center gap-4">
+                            <span className="font-mono text-slate-500">
+                              {timeLabel}
+                            </span>
+                            <span className="font-semibold">{log.provider}</span>
+                            <span className="font-mono">{log.domain}</span>
+                          </div>
+                          <div
+                            className={`font-semibold ${log.success ? "text-green-600" : "text-red-600"}`}
+                          >
+                            {log.success ? `${log.latency_ms}ms` : "Failed"}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </CardContent>
@@ -609,36 +651,54 @@ export default function Home() {
                 <CardDescription>Last 100 benchmark runs</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="h-[400px] w-full mb-8">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={history}>
-                      <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                      <XAxis
-                        dataKey="created_at"
-                        tickFormatter={val =>
-                          new Date(val).toLocaleTimeString()
-                        }
-                        tick={{ fontSize: 12 }}
-                      />
-                      <YAxis tick={{ fontSize: 12 }} />
-                      <Tooltip
-                        labelFormatter={val => new Date(val).toLocaleString()}
-                        contentStyle={{
-                          backgroundColor:
-                            theme === "dark" ? "#1e293b" : "#fff",
-                          borderColor: theme === "dark" ? "#334155" : "#e2e8f0",
-                        }}
-                      />
-                      <Legend />
-                      <Line
-                        type="monotone"
-                        dataKey="avg_latency"
-                        stroke="#8884d8"
-                        name="Avg Latency (ms)"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
+                {!isSupabaseConfigured ? (
+                  <div className="text-center py-8 text-slate-500 flex flex-col items-center gap-2">
+                    <AlertCircle className="w-6 h-6 text-yellow-500" />
+                    <p>
+                      History requires Supabase. Configure{" "}
+                      <code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 rounded">
+                        VITE_SUPABASE_URL
+                      </code>{" "}
+                      and{" "}
+                      <code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 rounded">
+                        VITE_SUPABASE_ANON_KEY
+                      </code>{" "}
+                      to enable this feature.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="h-[400px] w-full mb-8">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={history}>
+                        <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                        <XAxis
+                          dataKey="created_at"
+                          tickFormatter={val =>
+                            new Date(val).toLocaleTimeString()
+                          }
+                          tick={{ fontSize: 12 }}
+                        />
+                        <YAxis tick={{ fontSize: 12 }} />
+                        <Tooltip
+                          labelFormatter={val => new Date(val).toLocaleString()}
+                          contentStyle={{
+                            backgroundColor:
+                              theme === "dark" ? "#1e293b" : "#fff",
+                            borderColor:
+                              theme === "dark" ? "#334155" : "#e2e8f0",
+                          }}
+                        />
+                        <Legend />
+                        <Line
+                          type="monotone"
+                          dataKey="avg_latency"
+                          stroke="#8884d8"
+                          name="Avg Latency (ms)"
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -652,40 +712,57 @@ export default function Home() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {leaderboard
-                    .sort((a, b) => a.avg_latency - b.avg_latency)
-                    .map((item, index) => {
-                      const provider = DOH_PROVIDERS.find(
-                        p => p.name === item.provider
-                      );
-                      return (
-                        <Card key={item.provider} className="overflow-hidden">
-                          <div className="flex items-center p-4 gap-4">
-                            <div
-                              className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white ${index === 0 ? "bg-yellow-500" : index === 1 ? "bg-slate-400" : index === 2 ? "bg-amber-700" : "bg-slate-800"}`}
-                            >
-                              #{index + 1}
-                            </div>
-                            <div className="flex-1">
-                              <h3 className="font-bold text-lg">
-                                {item.provider}
-                              </h3>
-                              <p
-                                className="text-2xl font-black"
-                                style={{ color: provider?.color }}
+                {!isSupabaseConfigured ? (
+                  <div className="text-center py-8 text-slate-500 flex flex-col items-center gap-2">
+                    <AlertCircle className="w-6 h-6 text-yellow-500" />
+                    <p>
+                      Leaderboard requires Supabase. Configure{" "}
+                      <code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 rounded">
+                        VITE_SUPABASE_URL
+                      </code>{" "}
+                      and{" "}
+                      <code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 rounded">
+                        VITE_SUPABASE_ANON_KEY
+                      </code>{" "}
+                      to enable this feature.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {leaderboard
+                      .sort((a, b) => a.avg_latency - b.avg_latency)
+                      .map((item, index) => {
+                        const provider = DOH_PROVIDERS.find(
+                          p => p.name === item.provider
+                        );
+                        return (
+                          <Card key={item.provider} className="overflow-hidden">
+                            <div className="flex items-center p-4 gap-4">
+                              <div
+                                className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white ${index === 0 ? "bg-yellow-500" : index === 1 ? "bg-slate-400" : index === 2 ? "bg-amber-700" : "bg-slate-800"}`}
                               >
-                                {Math.round(item.avg_latency)}
-                                <span className="text-sm font-normal text-slate-500">
-                                  ms
-                                </span>
-                              </p>
+                                #{index + 1}
+                              </div>
+                              <div className="flex-1">
+                                <h3 className="font-bold text-lg">
+                                  {item.provider}
+                                </h3>
+                                <p
+                                  className="text-2xl font-black"
+                                  style={{ color: provider?.color }}
+                                >
+                                  {Math.round(item.avg_latency)}
+                                  <span className="text-sm font-normal text-slate-500">
+                                    ms
+                                  </span>
+                                </p>
+                              </div>
                             </div>
-                          </div>
-                        </Card>
-                      );
-                    })}
-                </div>
+                          </Card>
+                        );
+                      })}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
