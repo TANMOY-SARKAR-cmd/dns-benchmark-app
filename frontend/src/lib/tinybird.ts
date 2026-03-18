@@ -25,7 +25,6 @@ import {
 export const appToken = defineToken("app_read");
 export const ingestToken = defineToken("ingest_token");
 
-
 // ============================================================================
 // Datasources
 // ============================================================================
@@ -62,8 +61,8 @@ export type PageViewsRow = InferRow<typeof pageViews>;
 export const topPages = defineEndpoint("top_pages", {
   description: "Get the most visited pages",
   params: {
-    date_from: p.dateTime().optional('2026-03-17T17:48:01.723Z'),
-    date_to: p.dateTime().optional('2026-03-16T17:48:01.723Z'),
+    date_from: p.dateTime().optional("2026-03-17T17:48:01.723Z"),
+    date_to: p.dateTime().optional("2026-03-16T17:48:01.723Z"),
     limit: p.int32().optional(10),
   },
   nodes: [

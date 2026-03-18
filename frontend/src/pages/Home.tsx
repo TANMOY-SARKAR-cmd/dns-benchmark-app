@@ -65,7 +65,6 @@ export default function Home() {
 
     // Subscribe to live logs
 
-
     const channel = supabase
       .channel("schema-db-changes")
       .on(
@@ -82,14 +81,12 @@ export default function Home() {
       .subscribe();
 
     return () => {
-       supabase.removeChannel(channel);
+      supabase.removeChannel(channel);
     };
   }, []);
 
   const fetchLeaderboard = async () => {
     try {
-
-
       const { data, error } = await supabase.from("leaderboard").select("*");
       if (error) throw error;
       setLeaderboard(data || []);
@@ -100,7 +97,6 @@ export default function Home() {
 
   const fetchHistory = async () => {
     try {
-
       const { data, error } = await supabase
         .from("benchmark_results")
         .select("*")
@@ -196,7 +192,7 @@ export default function Home() {
       if (allQueries.length > 0) {
         // Insert queries in batches of 50
         for (let i = 0; i < allQueries.length; i += 50) {
-           await supabase
+          await supabase
             .from("dns_queries")
             .insert(allQueries.slice(i, i + 50));
         }
@@ -222,7 +218,7 @@ export default function Home() {
         );
 
         if (benchmarkResults.length > 0) {
-           await supabase.from("benchmark_results").insert(benchmarkResults);
+          await supabase.from("benchmark_results").insert(benchmarkResults);
         }
 
         fetchLeaderboard();
@@ -538,6 +534,12 @@ export default function Home() {
                                             {result.minLatency}-
                                             {result.maxLatency}ms |{" "}
                                             {result.successRate}%
+                                            {!result.verified && (
+                                              <div className="text-yellow-600 dark:text-yellow-500 mt-1">
+                                                ⚠️ Latency only (response not
+                                                verified)
+                                              </div>
+                                            )}
                                           </div>
                                         </div>
                                       )}
@@ -567,7 +569,8 @@ export default function Home() {
               <CardContent>
                 {liveLogs.length === 0 ? (
                   <div className="text-center py-8 text-slate-500">
-                    Waiting for queries... Run a benchmark to see live results here.
+                    Waiting for queries... Run a benchmark to see live results
+                    here.
                   </div>
                 ) : (
                   <div className="space-y-2">
