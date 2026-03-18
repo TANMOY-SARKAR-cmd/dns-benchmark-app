@@ -1,5 +1,4 @@
 import dnsPacket from "dns-packet";
-import { Buffer } from "buffer";
 
 export type DoHProvider = {
   name: string;
@@ -102,7 +101,7 @@ export async function measureDoH(
         });
 
         if (response.ok) {
-          dnsPacket.decode(Buffer.from(await response.arrayBuffer()));
+          dnsPacket.decode(new Uint8Array(await response.arrayBuffer()) as any);
           successCount++;
           latencies.push(performance.now() - qStartTime);
         }
