@@ -9,14 +9,12 @@ export const isSupabaseConfigured = !!supabaseUrl && !!supabaseAnonKey;
 
 if (!isSupabaseConfigured) {
   console.warn(
-    "Supabase is not configured. Set VITE_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL and the corresponding ANON KEY."
-  );
-  throw new Error(
-    "Supabase is not configured. Set VITE_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL and corresponding ANON KEY."
+    "Supabase is not configured. History, leaderboard, and live logs will be unavailable. " +
+      "Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable these features."
   );
 }
 
 export const ENV = {
-  supabaseUrl,
-  supabaseAnonKey,
+  supabaseUrl: supabaseUrl ?? "",
+  supabaseAnonKey: supabaseAnonKey ?? "",
 };
