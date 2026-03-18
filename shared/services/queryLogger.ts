@@ -44,7 +44,7 @@ export async function getDnsQueryLogs(userId: string, limit: number = 100) {
   }
 
   // Transform to match old interface
-  return data.map(log => ({
+  return data.map((log: any) => ({
     id: log.id,
     userId: log.user_id,
     domain: log.domain,
