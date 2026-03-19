@@ -3,15 +3,13 @@ const supabaseUrl =
 
 const supabaseAnonKey =
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
-  import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  import.meta.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
 export const isSupabaseConfigured = !!supabaseUrl && !!supabaseAnonKey;
 
-if (!isSupabaseConfigured) {
-  console.warn(
-    "Supabase is not configured. History, leaderboard, and live logs will be unavailable. " +
-      "Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable these features."
-  );
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error("Supabase env missing", import.meta.env);
 }
 
 export const ENV = {
