@@ -12,7 +12,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { measureDoH, DOH_PROVIDERS, BenchmarkResult } from "@/lib/doh";
 import { supabase } from "@/lib/supabase";
-import { isSupabaseConfigured } from "@/config/env";
+import { isSupabaseConfigured, ENV } from "@/config/env";
 import {
   BarChart,
   Bar,
@@ -60,7 +60,7 @@ export default function Home() {
   const [liveLogs, setLiveLogs] = useState<any[]>([]);
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) return;
+    if (!isSupabaseConfigured) return;
 
     // Capture non-null reference for use inside the closure
     const sb = supabase;
@@ -71,7 +71,7 @@ export default function Home() {
 
     // Subscribe to live logs
     const channel = sb
-      .channel("schema-db-changes")
+      .channel("dns_queries")
       .on(
         "postgres_changes",
         {
@@ -80,6 +80,7 @@ export default function Home() {
           table: "dns_queries",
         },
         payload => {
+          console.log("Realtime insert:", payload);
           setLiveLogs(prev => [payload.new, ...prev].slice(0, 50));
         }
       )
@@ -91,7 +92,7 @@ export default function Home() {
   }, []);
 
   const fetchLeaderboard = async () => {
-    if (!supabase) return;
+
     try {
       const { data, error } = await supabase.from("leaderboard").select("*");
       if (error) throw error;
@@ -102,7 +103,7 @@ export default function Home() {
   };
 
   const fetchHistory = async () => {
-    if (!supabase) return;
+
     try {
       const { data, error } = await supabase
         .from("benchmark_results")
@@ -184,8 +185,9 @@ export default function Home() {
                       user_id: "anonymous",
                       domain,
                       provider: provider.name,
-                      latency_ms: result.avgLatency,
+                      latency: result.avgLatency,
                       success: true,
+                      created_at: new Date().toISOString()
                     });
                   }
                 } catch (error) {
@@ -194,8 +196,9 @@ export default function Home() {
                     user_id: "anonymous",
                     domain,
                     provider: provider.name,
-                    latency_ms: 0,
+                    latency: 0,
                     success: false,
+                    created_at: new Date().toISOString()
                   });
                 }
                 completed++;
@@ -210,12 +213,17 @@ export default function Home() {
       toast.success("Benchmark completed successfully");
 
       // Save to Supabase (only when configured)
-      if (supabase && allQueries.length > 0) {
+      if (isSupabaseConfigured && allQueries.length > 0) {
         // Insert queries in batches of 50
         for (let i = 0; i < allQueries.length; i += 50) {
-          await supabase
+          const batch = allQueries.slice(i, i + 50);
+          console.log("Inserting DNS queries:", batch);
+          const { error } = await supabase
             .from("dns_queries")
-            .insert(allQueries.slice(i, i + 50));
+            .insert(batch);
+          if (error) {
+            console.error("Supabase insert failed for dns_queries:", error);
+          }
         }
 
         // Calculate and insert provider averages for this run
@@ -225,21 +233,36 @@ export default function Home() {
           if (q.success) {
             if (!providerAvgs[q.provider])
               providerAvgs[q.provider] = { total: 0, count: 0 };
-            providerAvgs[q.provider].total += q.latency_ms;
+            providerAvgs[q.provider].total += q.latency;
             providerAvgs[q.provider].count++;
           }
         });
 
         const benchmarkResults = Object.entries(providerAvgs).map(
-          ([provider, { total, count }]) => ({
-            user_id: "anonymous",
-            provider,
-            avg_latency: Math.round(total / count),
-          })
+          ([provider, { total, count }]) => {
+            const providerResults = Object.values(results).map(r => r[provider]).filter(r => r && r !== "Error");
+            const min_latency = providerResults.length > 0 ? Math.min(...providerResults.map(r => r.minLatency)) : 0;
+            const max_latency = providerResults.length > 0 ? Math.max(...providerResults.map(r => r.maxLatency)) : 0;
+            const avg_success = providerResults.length > 0 ? providerResults.reduce((acc, r) => acc + r.successRate, 0) / providerResults.length : 0;
+
+            return {
+              user_id: "anonymous",
+              provider,
+              avg_latency: Math.round(total / count),
+              min_latency,
+              max_latency,
+              success_rate: Math.round(avg_success),
+              created_at: new Date().toISOString()
+            };
+          }
         );
 
         if (benchmarkResults.length > 0) {
-          await supabase.from("benchmark_results").insert(benchmarkResults);
+          console.log("Inserting benchmark results:", benchmarkResults);
+          const { error } = await supabase.from("benchmark_results").insert(benchmarkResults);
+          if (error) {
+            console.error("Supabase insert failed for benchmark_results:", error);
+          }
         }
 
         fetchLeaderboard();
@@ -307,6 +330,11 @@ export default function Home() {
     >
       <div className="container mx-auto px-4 py-8 max-w-6xl">
         {/* Header */}
+        <div className="mb-8 p-4 bg-slate-100 dark:bg-slate-900 rounded-lg text-xs font-mono whitespace-pre overflow-x-auto">
+          <strong>Debug Info:</strong>
+          {JSON.stringify({ supabaseUrl: ENV.supabaseUrl, hasKey: !!ENV.supabaseAnonKey }, null, 2)}
+        </div>
+
         <div className="flex justify-between items-center mb-8">
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-2">
@@ -633,7 +661,7 @@ export default function Home() {
                           <div
                             className={`font-semibold ${log.success ? "text-green-600" : "text-red-600"}`}
                           >
-                            {log.success ? `${log.latency_ms}ms` : "Failed"}
+                            {log.success ? `${log.latency}ms` : "Failed"}
                           </div>
                         </div>
                       );
