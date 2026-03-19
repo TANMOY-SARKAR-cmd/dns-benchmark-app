@@ -1,0 +1,49 @@
+--- frontend/src/pages/Home.tsx
++++ frontend/src/pages/Home.tsx
+@@ -165,26 +165,19 @@
+         // Calculate and insert provider averages for this run
+         const providerAvgs: Record<string, { total: number; count: number }> =
+           {};
+         allQueries.forEach(q => {
+-          if (q.success) {
+-            if (!providerAvgs[q.provider])
+-              providerAvgs[q.provider] = { total: 0, count: 0 };
+-            providerAvgs[q.provider].total += q.latency_ms;
+-            providerAvgs[q.provider].count++;
++          if (q.status === "success") {
++            if (!providerAvgs[q.upstream_provider])
++              providerAvgs[q.upstream_provider] = { total: 0, count: 0 };
++            providerAvgs[q.upstream_provider].total += q.latency_ms;
++            providerAvgs[q.upstream_provider].count++;
+           }
+         });
+
+-        const benchmarkResults = Object.entries(providerAvgs).map(
+-          ([provider, { total, count }]) => {
+-            const providerResults = Object.values(results).map(r => r[provider]).filter(r => r && r !== "Error");
+-            const min_latency = providerResults.length > 0 ? Math.min(...providerResults.map(r => r.minLatency)) : 0;
+-            const max_latency = providerResults.length > 0 ? Math.max(...providerResults.map(r => r.maxLatency)) : 0;
+-            const avg_success = providerResults.length > 0 ? providerResults.reduce((acc, r) => acc + r.successRate, 0) / providerResults.length : 0;
+-
+-            return {
+-              user_id: "anonymous",
+-              provider,
+-              avg_latency: Math.round(total / count),
+-              min_latency,
+-              max_latency,
+-              success_rate: Math.round(avg_success),
+-              created_at: new Date().toISOString()
+-            };
+-          }
+-        );
++        const benchmarkResults = allQueries
++          .filter(q => q.status === "success")
++          .map(q => ({
++            user_id: q.user_id,
++            domain: q.domain,
++            provider: q.upstream_provider,
++            latency_ms: q.latency_ms,
++            tested_at: q.created_at
++          }));
+
+         if (benchmarkResults.length > 0) {

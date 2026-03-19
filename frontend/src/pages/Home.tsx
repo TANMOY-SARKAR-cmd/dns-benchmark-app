@@ -95,7 +95,10 @@ export default function Home() {
 
     try {
       const { data, error } = await supabase.from("leaderboard").select("*");
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase error:", error);
+        throw error;
+      }
       setLeaderboard(data || []);
     } catch (e) {
       console.error("Leaderboard fetch error", e);
@@ -108,9 +111,12 @@ export default function Home() {
       const { data, error } = await supabase
         .from("benchmark_results")
         .select("*")
-        .order("created_at", { ascending: false })
+        .order("tested_at", { ascending: false })
         .limit(100);
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase error:", error);
+        throw error;
+      }
       setHistory(data || []);
     } catch (e) {
       console.error("History fetch error", e);
@@ -184,9 +190,9 @@ export default function Home() {
                     allQueries.push({
                       user_id: "anonymous",
                       domain,
-                      provider: provider.name,
+                      upstream_provider: provider.name,
                       latency_ms: result.avgLatency,
-                      success: true,
+                      status: "success",
                       created_at: new Date().toISOString()
                     });
                   }
@@ -195,9 +201,9 @@ export default function Home() {
                   allQueries.push({
                     user_id: "anonymous",
                     domain,
-                    provider: provider.name,
+                    upstream_provider: provider.name,
                     latency_ms: 0,
-                    success: false,
+                    status: "failed",
                     created_at: new Date().toISOString()
                   });
                 }
@@ -222,46 +228,25 @@ export default function Home() {
             .from("dns_queries")
             .insert(batch);
           if (error) {
-            console.error("Supabase insert failed for dns_queries:", error);
+            console.error("Supabase error:", error);
           }
         }
 
-        // Calculate and insert provider averages for this run
-        const providerAvgs: Record<string, { total: number; count: number }> =
-          {};
-        allQueries.forEach(q => {
-          if (q.success) {
-            if (!providerAvgs[q.provider])
-              providerAvgs[q.provider] = { total: 0, count: 0 };
-            providerAvgs[q.provider].total += q.latency_ms;
-            providerAvgs[q.provider].count++;
-          }
-        });
-
-        const benchmarkResults = Object.entries(providerAvgs).map(
-          ([provider, { total, count }]) => {
-            const providerResults = Object.values(results).map(r => r[provider]).filter(r => r && r !== "Error");
-            const min_latency = providerResults.length > 0 ? Math.min(...providerResults.map(r => r.minLatency)) : 0;
-            const max_latency = providerResults.length > 0 ? Math.max(...providerResults.map(r => r.maxLatency)) : 0;
-            const avg_success = providerResults.length > 0 ? providerResults.reduce((acc, r) => acc + r.successRate, 0) / providerResults.length : 0;
-
-            return {
-              user_id: "anonymous",
-              provider,
-              avg_latency: Math.round(total / count),
-              min_latency,
-              max_latency,
-              success_rate: Math.round(avg_success),
-              created_at: new Date().toISOString()
-            };
-          }
-        );
+        const benchmarkResults = allQueries
+          .filter(q => q.status === "success")
+          .map(q => ({
+            user_id: q.user_id,
+            domain: q.domain,
+            provider: q.upstream_provider,
+            latency_ms: q.latency_ms,
+            tested_at: q.created_at
+          }));
 
         if (benchmarkResults.length > 0) {
           console.log("Inserting benchmark results:", benchmarkResults);
           const { error } = await supabase.from("benchmark_results").insert(benchmarkResults);
           if (error) {
-            console.error("Supabase insert failed for benchmark_results:", error);
+            console.error("Supabase error:", error);
           }
         }
 
@@ -650,13 +635,13 @@ export default function Home() {
                             <span className="font-mono text-slate-500">
                               {timeLabel}
                             </span>
-                            <span className="font-semibold">{log.provider}</span>
+                            <span className="font-semibold">{log.upstream_provider}</span>
                             <span className="font-mono">{log.domain}</span>
                           </div>
                           <div
-                            className={`font-semibold ${log.success ? "text-green-600" : "text-red-600"}`}
+                            className={`font-semibold ${log.status === "success" ? "text-green-600" : "text-red-600"}`}
                           >
-                            {log.success ? `${log.latency_ms}ms` : "Failed"}
+                            {log.status === "success" ? `${log.latency_ms}ms` : "Failed"}
                           </div>
                         </div>
                       );
@@ -695,7 +680,7 @@ export default function Home() {
                       <LineChart data={history}>
                         <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
                         <XAxis
-                          dataKey="created_at"
+                          dataKey="tested_at"
                           tickFormatter={val =>
                             new Date(val).toLocaleTimeString()
                           }
@@ -714,7 +699,7 @@ export default function Home() {
                         <Legend />
                         <Line
                           type="monotone"
-                          dataKey="avg_latency"
+                          dataKey="latency_ms"
                           stroke="#8884d8"
                           name="Avg Latency (ms)"
                         />
@@ -753,7 +738,7 @@ export default function Home() {
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {leaderboard
-                      .sort((a, b) => a.avg_latency - b.avg_latency)
+                      .sort((a, b) => a.global_avg_ms - b.global_avg_ms)
                       .map((item, index) => {
                         const provider = DOH_PROVIDERS.find(
                           p => p.name === item.provider
@@ -774,7 +759,7 @@ export default function Home() {
                                   className="text-2xl font-black"
                                   style={{ color: provider?.color }}
                                 >
-                                  {Math.round(item.avg_latency)}
+                                  {Math.round(item.global_avg_ms)}
                                   <span className="text-sm font-normal text-slate-500">
                                     ms
                                   </span>
