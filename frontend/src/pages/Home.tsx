@@ -185,7 +185,7 @@ export default function Home() {
                       user_id: "anonymous",
                       domain,
                       provider: provider.name,
-                      latency_ms: result.avgLatency,
+                      latency: result.avgLatency,
                       success: true,
                       created_at: new Date().toISOString()
                     });
@@ -196,7 +196,7 @@ export default function Home() {
                     user_id: "anonymous",
                     domain,
                     provider: provider.name,
-                    latency_ms: 0,
+                    latency: 0,
                     success: false,
                     created_at: new Date().toISOString()
                   });
@@ -233,7 +233,7 @@ export default function Home() {
           if (q.success) {
             if (!providerAvgs[q.provider])
               providerAvgs[q.provider] = { total: 0, count: 0 };
-            providerAvgs[q.provider].total += q.latency_ms;
+            providerAvgs[q.provider].total += q.latency;
             providerAvgs[q.provider].count++;
           }
         });
@@ -330,6 +330,11 @@ export default function Home() {
     >
       <div className="container mx-auto px-4 py-8 max-w-6xl">
         {/* Header */}
+        <div className="mb-8 p-4 bg-slate-100 dark:bg-slate-900 rounded-lg text-xs font-mono whitespace-pre overflow-x-auto">
+          <strong>Debug Info:</strong>
+          {JSON.stringify({ supabaseUrl: ENV.supabaseUrl, hasKey: !!ENV.supabaseAnonKey }, null, 2)}
+        </div>
+
         <div className="flex justify-between items-center mb-8">
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-2">
@@ -656,7 +661,7 @@ export default function Home() {
                           <div
                             className={`font-semibold ${log.success ? "text-green-600" : "text-red-600"}`}
                           >
-                            {log.success ? `${log.latency_ms}ms` : "Failed"}
+                            {log.success ? `${log.latency}ms` : "Failed"}
                           </div>
                         </div>
                       );
