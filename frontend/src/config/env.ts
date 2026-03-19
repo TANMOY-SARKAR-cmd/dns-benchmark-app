@@ -16,3 +16,10 @@ export const ENV = {
   supabaseUrl: supabaseUrl ?? "",
   supabaseAnonKey: supabaseAnonKey ?? "",
 };
+
+if (import.meta.env.DEV) {
+  console.log("Supabase Config:", {
+    supabaseUrl,
+    hasKey: !!supabaseAnonKey
+  });
+}

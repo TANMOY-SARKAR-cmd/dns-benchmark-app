@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS public.dns_queries (
     user_id TEXT DEFAULT 'anonymous',
     domain TEXT NOT NULL,
     provider TEXT NOT NULL,
-    latency INTEGER NOT NULL,
+    latency_ms INTEGER NOT NULL,
     success BOOLEAN NOT NULL,
     timestamp TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW()
@@ -29,7 +29,7 @@ CREATE INDEX IF NOT EXISTS idx_benchmark_results_created_at ON public.benchmark_
 
 -- Create Leaderboard View
 CREATE OR REPLACE VIEW public.leaderboard AS
-SELECT provider, AVG(latency) AS avg_latency
+SELECT provider, AVG(latency_ms) AS avg_latency
 FROM public.dns_queries
 WHERE success = true
 GROUP BY provider;
