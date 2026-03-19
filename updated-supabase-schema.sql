@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS public.benchmark_results (
     user_id TEXT DEFAULT 'anonymous',
     provider TEXT NOT NULL,
     avg_latency INTEGER NOT NULL,
+    min_latency INTEGER,
+    max_latency INTEGER,
+    success_rate NUMERIC,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
