@@ -261,7 +261,7 @@ export default function Home() {
           console.log("Inserting benchmark results:", benchmarkResults);
           const { error } = await supabase.from("benchmark_results").insert(benchmarkResults);
           if (error) {
-            console.error("Insert error:", error);
+            console.error("Supabase insert failed for benchmark_results:", error);
           }
         }
 
