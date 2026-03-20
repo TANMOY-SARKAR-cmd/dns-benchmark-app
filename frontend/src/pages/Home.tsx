@@ -38,11 +38,14 @@ import {
   Activity,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { AuthButton } from "@/components/AuthButton";
 import { toast } from "sonner";
 
 export default function Home() {
   const { theme, setTheme } = useTheme();
+  const { user } = useAuth();
+  const userId = user?.id || "anonymous";
   const [domainsInput, setDomainsInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -104,7 +107,7 @@ export default function Home() {
       sb.removeChannel(channel);
       subscription.unsubscribe();
     };
-  }, []);
+  }, [user]);
 
   const fetchLeaderboard = async () => {
     try {
@@ -180,8 +183,7 @@ export default function Home() {
     setProgress(0);
     setTestResults(null);
 
-    const { data } = await supabase.auth.getUser();
-    const userId = data?.user?.id || "anonymous";
+
     const results: Record<
       string,
       Record<string, BenchmarkResult | "Error">
@@ -240,8 +242,8 @@ export default function Home() {
       setTestResults(results);
       toast.success("Benchmark completed successfully");
 
-      // Save to Supabase (only when configured)
-      if (isSupabaseConfigured && allQueries.length > 0) {
+      // Save to Supabase (only when configured and user is logged in)
+      if (isSupabaseConfigured && user && allQueries.length > 0) {
         // Insert queries in batches of 50
         for (let i = 0; i < allQueries.length; i += 50) {
           const batch = allQueries.slice(i, i + 50);
@@ -610,6 +612,11 @@ export default function Home() {
                       to enable this feature.
                     </p>
                   </div>
+                ) : !user ? (
+                  <div className="text-center py-8 text-slate-500 flex flex-col items-center gap-2">
+                    <AlertCircle className="w-6 h-6 text-blue-500" />
+                    <p>Please log in to view live logs.</p>
+                  </div>
                 ) : liveLogs.length === 0 ? (
                   <div className="text-center py-8 text-slate-500">
                     Waiting for queries... Run a benchmark to see live results
@@ -675,6 +682,11 @@ export default function Home() {
                       </code>{" "}
                       to enable this feature.
                     </p>
+                  </div>
+                ) : !user ? (
+                  <div className="text-center py-8 text-slate-500 flex flex-col items-center gap-2">
+                    <AlertCircle className="w-6 h-6 text-blue-500" />
+                    <p>Please log in to view your benchmark history.</p>
                   </div>
                 ) : (
                   <div className="h-[400px] w-full mb-8">

@@ -1,65 +1,64 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { LogOut } from "lucide-react";
+import { LogOut, User as UserIcon } from "lucide-react";
 import { AuthDialog } from "./AuthDialog";
 import { isSupabaseConfigured } from "@/config/env";
+import { useAuth } from "@/contexts/AuthContext";
 
 export function AuthButton() {
-  const [session, setSession] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!isSupabaseConfigured) return;
-
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
-    });
-
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
+  const { user, isLoading } = useAuth();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const handleLogout = async () => {
-    setLoading(true);
+    setIsLoggingOut(true);
     try {
       const { error } = await supabase.auth.signOut();
       if (error) {
         toast.error(error.message);
+        console.error("Auth error:", error);
       } else {
         toast.success("Logged out successfully");
       }
     } catch (error) {
       toast.error("An unexpected error occurred during logout");
+      console.error(error);
     } finally {
-      setLoading(false);
+      setIsLoggingOut(false);
     }
   };
 
-  if (!isSupabaseConfigured || loading) return null;
+  if (!isSupabaseConfigured || isLoading) return null;
 
-  if (session) {
+  if (user) {
     return (
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={handleLogout}
-        className="gap-2"
-      >
-        <LogOut className="w-4 h-4" />
-        Logout
-      </Button>
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+          <UserIcon className="w-4 h-4" />
+          <span className="hidden sm:inline">Logged in as {user.email || 'user'}</span>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleLogout}
+          disabled={isLoggingOut}
+          className="gap-2"
+        >
+          <LogOut className="w-4 h-4" />
+          Logout
+        </Button>
+      </div>
     );
   }
 
-  return <AuthDialog />;
+  return (
+    <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 text-sm text-slate-500 italic">
+        <UserIcon className="w-4 h-4" />
+        <span className="hidden sm:inline">Using as Guest</span>
+      </div>
+      <AuthDialog />
+    </div>
+  );
 }
