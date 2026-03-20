@@ -12,6 +12,13 @@ patchedDependencies:
 importers:
 
   .:
+    dependencies:
+      '@types/dns-packet':
+        specifier: ^5.6.5
+        version: 5.6.5
+      dns-packet:
+        specifier: ^5.6.1
+        version: 5.6.1
     devDependencies:
       '@supabase/supabase-js':
         specifier: ^2.99.2

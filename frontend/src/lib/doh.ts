@@ -225,6 +225,35 @@ export async function measureDoH(
       res = await binaryPostQuery(provider, domain);
     }
 
+    // Proxy fallback for specific providers
+    if (!res.success && ["Quad9", "AdGuard", "OpenDNS"].includes(provider.name)) {
+      try {
+        const url = new URL("/api/dns-query", window.location.origin);
+        url.searchParams.set("domain", domain);
+        url.searchParams.set("provider", provider.name);
+
+        const { response } = await fetchWithTimeout(url.toString(), {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+          },
+        }, 5000);
+
+        if (response && response.ok) {
+          const data = await response.json();
+          if (data.success && typeof data.latency === "number") {
+            res = {
+              latency: data.latency,
+              success: true,
+              verified: data.verified,
+            };
+          }
+        }
+      } catch (e) {
+        // Ignore error
+      }
+    }
+
     if (res.success) {
       successCount++;
       latencies.push(res.latency);
