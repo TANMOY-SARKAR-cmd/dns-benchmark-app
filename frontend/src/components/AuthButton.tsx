@@ -1,34 +1,14 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/lib/supabase";
-import { toast } from "sonner";
-import { LogOut, User as UserIcon } from "lucide-react";
+import { User as UserIcon } from "lucide-react";
 import { AuthDialog } from "./AuthDialog";
 import { isSupabaseConfigured } from "@/config/env";
 import { useAuth } from "@/contexts/AuthContext";
 import { UsernameSetupModal } from "./UsernameSetupModal";
+import { AccountPanel } from "./AccountPanel";
 
 export function AuthButton() {
   const { user, profile, isLoading } = useAuth();
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
-
-  const handleLogout = async () => {
-    setIsLoggingOut(true);
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        toast.error(error.message);
-        console.error("Auth error:", error);
-      } else {
-        toast.success("Logged out successfully");
-      }
-    } catch (error) {
-      toast.error("An unexpected error occurred during logout");
-      console.error(error);
-    } finally {
-      setIsLoggingOut(false);
-    }
-  };
 
   if (!isSupabaseConfigured || isLoading) return null;
 
@@ -38,22 +18,7 @@ export function AuthButton() {
         {(!profile?.username || profile?.username?.startsWith("user_")) && (
           <UsernameSetupModal />
         )}
-        <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-          <UserIcon className="w-4 h-4" />
-          <span className="hidden sm:inline">
-            Logged in as {profile?.username || user.email || "user"}
-          </span>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleLogout}
-          disabled={isLoggingOut}
-          className="gap-2"
-        >
-          <LogOut className="w-4 h-4" />
-          Logout
-        </Button>
+        <AccountPanel />
       </div>
     );
   }
