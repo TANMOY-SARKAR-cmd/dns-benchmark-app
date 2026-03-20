@@ -28,7 +28,7 @@ export async function runMonitorBenchmark(domains: string[], userId: string) {
                   created_at: new Date().toISOString(),
                 });
               } else {
-                 allQueries.push({
+                allQueries.push({
                   user_id: userId,
                   domain,
                   upstream_provider: provider.name,

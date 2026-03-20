@@ -23,11 +23,11 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider defaultTheme="dark" switchable>
         <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Router />
-        </TooltipProvider>
-      </AuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Router />
+          </TooltipProvider>
+        </AuthProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );

@@ -6,9 +6,10 @@ import { LogOut, User as UserIcon } from "lucide-react";
 import { AuthDialog } from "./AuthDialog";
 import { isSupabaseConfigured } from "@/config/env";
 import { useAuth } from "@/contexts/AuthContext";
+import { UsernameSetupModal } from "./UsernameSetupModal";
 
 export function AuthButton() {
-  const { user, isLoading } = useAuth();
+  const { user, profile, isLoading } = useAuth();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const handleLogout = async () => {
@@ -34,9 +35,14 @@ export function AuthButton() {
   if (user) {
     return (
       <div className="flex items-center gap-4">
+        {(!profile?.username || profile?.username?.startsWith("user_")) && (
+          <UsernameSetupModal />
+        )}
         <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
           <UserIcon className="w-4 h-4" />
-          <span className="hidden sm:inline">Logged in as {user.email || 'user'}</span>
+          <span className="hidden sm:inline">
+            Logged in as {profile?.username || user.email || "user"}
+          </span>
         </div>
         <Button
           variant="outline"
