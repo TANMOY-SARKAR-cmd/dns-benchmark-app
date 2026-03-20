@@ -1,20 +1,29 @@
-import dnsPacket from "dns-packet";
+import { promises as dns } from "node:dns";
 
-export const config = {
-  runtime: "edge",
-};
-
-const ALLOWED_PROVIDERS: Record<string, string> = {
-  "Quad9": "https://dns9.quad9.net:5053/dns-query",
-  "AdGuard": "https://dns.adguard-dns.com/dns-query",
-  "OpenDNS": "https://doh.opendns.com/dns-query",
+const PROVIDER_IPS: Record<string, string> = {
+  "Google": "8.8.8.8",
+  "Cloudflare": "1.1.1.1",
+  "Quad9": "9.9.9.9",
+  "AdGuard": "94.140.14.14",
+  "OpenDNS": "208.67.222.222",
 };
 
 export default async function handler(req: Request) {
+  // Only allow POST
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  let domain = "unknown";
+  let provider = "unknown";
+
   try {
-    const url = new URL(req.url);
-    const domain = url.searchParams.get("domain");
-    const provider = url.searchParams.get("provider");
+    const body = await req.json();
+    domain = body.domain;
+    provider = body.provider;
 
     if (!domain || !provider) {
       return new Response(JSON.stringify({ error: "Missing domain or provider" }), {
@@ -23,73 +32,50 @@ export default async function handler(req: Request) {
       });
     }
 
-    if (!ALLOWED_PROVIDERS[provider]) {
-      return new Response(JSON.stringify({ error: "Provider not allowed for proxy" }), {
-        status: 403,
+    const ip = PROVIDER_IPS[provider];
+    if (!ip) {
+      return new Response(JSON.stringify({ error: "Invalid provider" }), {
+        status: 400,
         headers: { "Content-Type": "application/json" },
       });
     }
 
-    const providerUrl = ALLOWED_PROVIDERS[provider];
-
-    const packet = dnsPacket.encode({
-      type: "query",
-      id: 0,
-      flags: dnsPacket.RECURSION_DESIRED,
-      questions: [
-        {
-          type: "A",
-          name: domain,
-        },
-      ],
-    });
+    const resolver = new dns.Resolver();
+    resolver.setServers([ip]);
 
     const start = performance.now();
 
-    const response = await fetch(providerUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/dns-message",
-        "Accept": "application/dns-message",
-      },
-      body: new Uint8Array(packet),
+    const resolvePromise = resolver.resolve4(domain);
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error("Timeout")), 2000);
     });
+
+    await Promise.race([resolvePromise, timeoutPromise]);
 
     const latency = performance.now() - start;
 
-    if (!response.ok) {
-      return new Response(JSON.stringify({ error: `Provider returned status ${response.status}` }), {
-        status: 502,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    const buffer = await response.arrayBuffer();
-
-    try {
-      dnsPacket.decode(new Uint8Array(buffer) as any);
-      return new Response(JSON.stringify({
-        latency,
-        success: true,
-        verified: true
-      }), {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          // Don't cache in browser to ensure accurate latency measurement on each call
-          "Cache-Control": "no-store",
-        },
-      });
-    } catch (e) {
-      return new Response(JSON.stringify({ error: "Failed to decode response" }), {
-        status: 502,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+    return new Response(JSON.stringify({
+      success: true,
+      latency,
+      provider,
+      domain
+    }), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store",
+      },
+    });
 
   } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message || "Internal server error" }), {
-      status: 500,
+    return new Response(JSON.stringify({
+      success: false,
+      latency: null,
+      provider,
+      domain,
+      error: error.message || "Internal server error"
+    }), {
+      status: 200,
       headers: { "Content-Type": "application/json" },
     });
   }
