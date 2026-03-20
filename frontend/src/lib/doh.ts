@@ -47,6 +47,7 @@ export type BenchmarkResult = {
   successRate: number;
   queriesPerSec: number;
   verified: boolean;
+  method: "server" | "client" | "mixed";
 };
 
 async function fetchWithTimeout(
@@ -202,6 +203,107 @@ async function binaryPostQuery(
   return { latency: 0, success: false, verified: false };
 }
 
+export type ResolveDNSResult = {
+  latency: number;
+  success: boolean;
+  verified: boolean;
+  method: "server" | "client";
+};
+
+async function resolveDNS(
+  domain: string,
+  provider: DoHProvider
+): Promise<ResolveDNSResult> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 2000);
+  const start = performance.now();
+
+  try {
+    // 1. Try server first (using existing /api/dns-query)
+    const url = new URL("/api/dns-query", window.location.origin);
+    url.searchParams.set("domain", domain);
+    url.searchParams.set("provider", provider.name);
+
+    const response = await fetch(url.toString(), {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+      signal: controller.signal,
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.success && typeof data.latency === "number") {
+        clearTimeout(timeoutId);
+        return {
+          latency: performance.now() - start, // Calculate true latency from client perspective
+          success: true,
+          verified: data.verified,
+          method: "server",
+        };
+      }
+    }
+  } catch (e) {
+    // Ignore server error, fallback to client
+  }
+
+  // If timeout already reached during server try, fail early
+  if (controller.signal.aborted) {
+    return { latency: 0, success: false, verified: false, method: "client" };
+  }
+
+  // 2. Fallback to client multi-method racing
+  try {
+    // We want the first successful method.
+    // If we use Promise.race, any fast failure rejects the race.
+    // So we use a wrapper that resolves only on success, and never rejects (except on timeout).
+    // Or we use Promise.any! The instructions said "Add Promise.race for DoH fallback", so we'll use Promise.any to be robust,
+    // actually, let's use a custom race that ignores failures to strictly use Promise.race but correctly.
+
+    let failedCount = 0;
+    const wrapMethod = async (fn: Promise<MethodResult>) => {
+      const res = await fn;
+      if (res.success) {
+        return res;
+      }
+      failedCount++;
+      if (failedCount === 2) {
+        return { latency: 0, success: false, verified: false };
+      }
+      // Never resolve if it's not the last failure, wait for the other to finish or timeout
+      return new Promise<MethodResult>(() => {});
+    };
+
+    const raceResult = await Promise.race([
+      wrapMethod(jsonQuery(provider, domain)),
+      wrapMethod(binaryGetQuery(provider, domain)),
+      new Promise<MethodResult>((_, reject) => {
+        const abortHandler = () => reject(new Error("Timeout"));
+        if (controller.signal.aborted) {
+          abortHandler();
+        } else {
+          controller.signal.addEventListener("abort", abortHandler);
+        }
+      }),
+    ]);
+
+    clearTimeout(timeoutId);
+
+    if (raceResult.success) {
+      return {
+        ...raceResult,
+        method: "client",
+      };
+    }
+  } catch (e) {
+    // Ignore race error
+  }
+
+  clearTimeout(timeoutId);
+  return { latency: 0, success: false, verified: false, method: "client" };
+}
+
 export async function measureDoH(
   provider: DoHProvider,
   domain: string,
@@ -209,50 +311,14 @@ export async function measureDoH(
 ): Promise<BenchmarkResult> {
   const latencies: number[] = [];
   let successCount = 0;
-  let verified = true; // default to true, set to false if the successful method is unverified
+  let verified = true;
+  let usedServer = false;
+  let usedClient = false;
 
   const startTime = performance.now();
 
   const promises = Array.from({ length: retries }).map(async () => {
-    // Try methods in order: JSON -> Binary GET -> Binary POST
-    let res = await jsonQuery(provider, domain);
-
-    if (!res.success) {
-      res = await binaryGetQuery(provider, domain);
-    }
-
-    if (!res.success) {
-      res = await binaryPostQuery(provider, domain);
-    }
-
-    // Proxy fallback for specific providers
-    if (!res.success && ["Quad9", "AdGuard", "OpenDNS"].includes(provider.name)) {
-      try {
-        const url = new URL("/api/dns-query", window.location.origin);
-        url.searchParams.set("domain", domain);
-        url.searchParams.set("provider", provider.name);
-
-        const { response } = await fetchWithTimeout(url.toString(), {
-          method: "GET",
-          headers: {
-            Accept: "application/json",
-          },
-        }, 5000);
-
-        if (response && response.ok) {
-          const data = await response.json();
-          if (data.success && typeof data.latency === "number") {
-            res = {
-              latency: data.latency,
-              success: true,
-              verified: data.verified,
-            };
-          }
-        }
-      } catch (e) {
-        // Ignore error
-      }
-    }
+    const res = await resolveDNS(domain, provider);
 
     if (res.success) {
       successCount++;
@@ -260,6 +326,8 @@ export async function measureDoH(
       if (!res.verified) {
         verified = false;
       }
+      if (res.method === "server") usedServer = true;
+      if (res.method === "client") usedClient = true;
     }
   });
 
@@ -281,5 +349,7 @@ export async function measureDoH(
     successRate: Math.round((successCount / retries) * 100),
     queriesPerSec: Math.round(successCount / totalTimeSec),
     verified: verified,
+    method:
+      usedServer && usedClient ? "mixed" : usedServer ? "server" : "client",
   };
 }

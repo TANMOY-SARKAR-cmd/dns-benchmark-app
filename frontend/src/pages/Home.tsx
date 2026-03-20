@@ -375,7 +375,17 @@ export default function Home() {
                   const result = await measureDoH(provider, domain);
                   results[domain][provider.name] = result;
 
-                  if (result.successRate > 0) {
+                  if (result.method === "client" || result.method === "mixed") {
+                    toast.warning(
+                      `Backend failed for ${provider.name}, using fallback`
+                    );
+                  }
+
+                  if (result.successRate === 0) {
+                    toast.error(
+                      `All methods failed for ${provider.name} on ${domain}`
+                    );
+                  } else if (result.successRate > 0) {
                     allQueries.push({
                       user_id: userId,
                       domain,
@@ -754,6 +764,9 @@ export default function Home() {
                                         <div>
                                           <div className="font-semibold">
                                             {result.avgLatency}ms
+                                          </div>
+                                          <div className="text-xs text-muted-foreground mt-1 text-blue-600 dark:text-blue-400">
+                                            ({result.method})
                                           </div>
                                           <div className="text-xs text-slate-500 dark:text-slate-400">
                                             {result.minLatency}-
