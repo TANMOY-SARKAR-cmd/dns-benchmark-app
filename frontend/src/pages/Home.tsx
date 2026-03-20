@@ -270,6 +270,24 @@ export default function Home() {
     }
   };
 
+  const handleKeepRecord = async (id: string, keepState: boolean) => {
+    try {
+      const { error } = await supabase
+        .from("benchmark_results")
+        .update({ keep: keepState })
+        .eq("id", id);
+      if (error) throw error;
+
+      setHistory(prev =>
+        prev.map(item => (item.id === id ? { ...item, keep: keepState } : item))
+      );
+      toast.success(keepState ? "Record kept" : "Record discarded");
+    } catch (e) {
+      console.error("Update keep error", e);
+      toast.error("Failed to update record");
+    }
+  };
+
   const fetchHistory = async () => {
     try {
       const { data, error } = await supabase
@@ -1011,36 +1029,108 @@ cloudflare.com"
                     <p>Please log in to view your benchmark history.</p>
                   </div>
                 ) : (
-                  <div className="h-[400px] w-full mb-8">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={history}>
-                        <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                        <XAxis
-                          dataKey="tested_at"
-                          tickFormatter={val =>
-                            new Date(val).toLocaleTimeString()
-                          }
-                          tick={{ fontSize: 12 }}
-                        />
-                        <YAxis tick={{ fontSize: 12 }} />
-                        <Tooltip
-                          labelFormatter={val => new Date(val).toLocaleString()}
-                          contentStyle={{
-                            backgroundColor:
-                              theme === "dark" ? "#1e293b" : "#fff",
-                            borderColor:
-                              theme === "dark" ? "#334155" : "#e2e8f0",
-                          }}
-                        />
-                        <Legend />
-                        <Line
-                          type="monotone"
-                          dataKey="latency_ms"
-                          stroke="#8884d8"
-                          name="Avg Latency (ms)"
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
+                  <div className="space-y-8">
+                    <div className="h-[400px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={history}>
+                          <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                          <XAxis
+                            dataKey="tested_at"
+                            tickFormatter={val =>
+                              new Date(val).toLocaleTimeString()
+                            }
+                            tick={{ fontSize: 12 }}
+                          />
+                          <YAxis tick={{ fontSize: 12 }} />
+                          <Tooltip
+                            labelFormatter={val =>
+                              new Date(val).toLocaleString()
+                            }
+                            contentStyle={{
+                              backgroundColor:
+                                theme === "dark" ? "#1e293b" : "#fff",
+                              borderColor:
+                                theme === "dark" ? "#334155" : "#e2e8f0",
+                            }}
+                          />
+                          <Legend />
+                          <Line
+                            type="monotone"
+                            dataKey="latency_ms"
+                            stroke="#8884d8"
+                            name="Avg Latency (ms)"
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    <div>
+                      <h3 className="text-lg font-semibold mb-4">
+                        Raw Records
+                      </h3>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left">
+                          <thead>
+                            <tr className="border-b dark:border-slate-800">
+                              <th className="py-3 px-4 font-semibold">Time</th>
+                              <th className="py-3 px-4 font-semibold">
+                                Domain
+                              </th>
+                              <th className="py-3 px-4 font-semibold">
+                                Provider
+                              </th>
+                              <th className="py-3 px-4 font-semibold">
+                                Latency
+                              </th>
+                              <th className="py-3 px-4 font-semibold">
+                                Action
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {history.map(record => (
+                              <tr
+                                key={record.id}
+                                className="border-b dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                              >
+                                <td className="py-3 px-4">
+                                  {new Date(record.tested_at).toLocaleString()}
+                                </td>
+                                <td className="py-3 px-4 font-mono">
+                                  {record.domain}
+                                </td>
+                                <td className="py-3 px-4">{record.provider}</td>
+                                <td className="py-3 px-4">
+                                  {record.latency_ms}ms
+                                </td>
+                                <td className="py-3 px-4">
+                                  {record.keep ? (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() =>
+                                        handleKeepRecord(record.id, false)
+                                      }
+                                    >
+                                      Discard
+                                    </Button>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      onClick={() =>
+                                        handleKeepRecord(record.id, true)
+                                      }
+                                    >
+                                      Keep
+                                    </Button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
                   </div>
                 )}
               </CardContent>
