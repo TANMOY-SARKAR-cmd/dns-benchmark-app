@@ -67,7 +67,7 @@ export default function Home() {
 
   // Monitors
   const [monitors, setMonitors] = useState<any[]>([]);
-  const [activeMonitors, setActiveMonitors] = useState<Set<string>>(new Set());
+  const [editingMonitorId, setEditingMonitorId] = useState<string | null>(null);
   const [monitorDomains, setMonitorDomains] = useState("");
   const [monitorInterval, setMonitorInterval] = useState(60);
   const [isCreatingMonitor, setIsCreatingMonitor] = useState(false);
@@ -124,14 +124,16 @@ export default function Home() {
   useEffect(() => {
     if (!user) {
       setMonitors([]);
-      setActiveMonitors(new Set());
     }
   }, [user]);
 
   const fetchMonitors = async () => {
     if (!user) return;
     try {
-      const { data, error } = await supabase.from("user_monitors").select("*");
+      const { data, error } = await supabase
+        .from("monitors")
+        .select("*")
+        .order("created_at", { ascending: false });
       if (error) throw error;
       setMonitors(data || []);
     } catch (e) {
@@ -143,7 +145,7 @@ export default function Home() {
     const intervals: Record<string, NodeJS.Timeout> = {};
 
     monitors.forEach(monitor => {
-      if (activeMonitors.has(monitor.id)) {
+      if (monitor.is_active) {
         // Run immediately when started
         runMonitorBenchmark(monitor.domains, user?.id || "anonymous");
 
@@ -157,7 +159,7 @@ export default function Home() {
     return () => {
       Object.values(intervals).forEach(clearInterval);
     };
-  }, [monitors, activeMonitors, user]);
+  }, [monitors, user]);
 
   const handleCreateMonitor = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -183,17 +185,35 @@ export default function Home() {
 
     setIsCreatingMonitor(true);
     try {
-      const { error } = await supabase.from("user_monitors").insert({
-        user_id: user.id,
-        domains,
-        interval_seconds: monitorInterval,
-      });
+      let error;
+      if (editingMonitorId) {
+        const { error: updateError } = await supabase
+          .from("monitors")
+          .update({
+            domains,
+            interval_seconds: monitorInterval,
+          })
+          .eq("id", editingMonitorId);
+        error = updateError;
+      } else {
+        const { error: insertError } = await supabase.from("monitors").insert({
+          user_id: user.id,
+          domains,
+          interval_seconds: monitorInterval,
+        });
+        error = insertError;
+      }
 
       if (error) throw error;
 
-      toast.success("Monitor created successfully");
+      toast.success(
+        editingMonitorId
+          ? "Monitor updated successfully"
+          : "Monitor created successfully"
+      );
       setMonitorDomains("");
       setMonitorInterval(60);
+      setEditingMonitorId(null);
       fetchMonitors();
     } catch (e: any) {
       console.error(e);
@@ -203,34 +223,32 @@ export default function Home() {
     }
   };
 
-  const toggleMonitor = (id: string) => {
-    setActiveMonitors(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-        toast.info("Monitor stopped");
-      } else {
-        next.add(id);
+  const toggleMonitor = async (monitor: any) => {
+    try {
+      const { error } = await supabase
+        .from("monitors")
+        .update({ is_active: !monitor.is_active })
+        .eq("id", monitor.id);
+      if (error) throw error;
+
+      fetchMonitors();
+      if (!monitor.is_active) {
         toast.success("Monitor started");
+      } else {
+        toast.info("Monitor stopped");
       }
-      return next;
-    });
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to toggle monitor");
+    }
   };
 
   const handleDeleteMonitor = async (id: string) => {
     if (!user) return;
     try {
-      const { error } = await supabase
-        .from("user_monitors")
-        .delete()
-        .eq("id", id);
+      const { error } = await supabase.from("monitors").delete().eq("id", id);
       if (error) throw error;
 
-      setActiveMonitors(prev => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
       toast.success("Monitor deleted");
       fetchMonitors();
     } catch (e) {
@@ -831,7 +849,7 @@ cloudflare.com"
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-1">
                                 <span
-                                  className={`w-2 h-2 rounded-full ${activeMonitors.has(monitor.id) ? "bg-green-500 animate-pulse" : "bg-slate-300 dark:bg-slate-700"}`}
+                                  className={`w-2 h-2 rounded-full ${monitor.is_active ? "bg-green-500 animate-pulse" : "bg-slate-300 dark:bg-slate-700"}`}
                                 ></span>
                                 <span className="font-medium">
                                   Every{" "}
@@ -850,17 +868,25 @@ cloudflare.com"
                             <div className="flex items-center gap-2 w-full sm:w-auto">
                               <Button
                                 variant={
-                                  activeMonitors.has(monitor.id)
-                                    ? "outline"
-                                    : "default"
+                                  monitor.is_active ? "outline" : "default"
                                 }
                                 size="sm"
-                                onClick={() => toggleMonitor(monitor.id)}
+                                onClick={() => toggleMonitor(monitor)}
                                 className="flex-1 sm:flex-none"
                               >
-                                {activeMonitors.has(monitor.id)
-                                  ? "Stop"
-                                  : "Start"}
+                                {monitor.is_active ? "Stop" : "Start"}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setMonitorDomains(monitor.domains.join("\n"));
+                                  setMonitorInterval(monitor.interval_seconds);
+                                  setEditingMonitorId(monitor.id);
+                                }}
+                                className="flex-1 sm:flex-none"
+                              >
+                                Edit
                               </Button>
                               <Button
                                 variant="destructive"
