@@ -163,10 +163,17 @@ export default function Home() {
     e.preventDefault();
     if (!user) return;
 
-    const VALID_DOMAIN_PATTERN = /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
+    const VALID_DOMAIN_PATTERN =
+      /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
     const domains = monitorDomains
       .split(/[\n,]+/)
-      .map(d => d.trim().replace(/^https?:\/\//i, "").split("/")[0])
+      .map(
+        d =>
+          d
+            .trim()
+            .replace(/^https?:\/\//i, "")
+            .split("/")[0]
+      )
       .filter(d => d.length > 0 && VALID_DOMAIN_PATTERN.test(d));
 
     if (domains.length === 0) {
@@ -213,7 +220,10 @@ export default function Home() {
   const handleDeleteMonitor = async (id: string) => {
     if (!user) return;
     try {
-      const { error } = await supabase.from("user_monitors").delete().eq("id", id);
+      const { error } = await supabase
+        .from("user_monitors")
+        .delete()
+        .eq("id", id);
       if (error) throw error;
 
       setActiveMonitors(prev => {
@@ -302,7 +312,6 @@ export default function Home() {
     setIsLoading(true);
     setProgress(0);
     setTestResults(null);
-
 
     const results: Record<
       string,
@@ -502,10 +511,10 @@ export default function Home() {
             <TabsTrigger value="logs" className="flex items-center gap-2">
               <Activity className="w-4 h-4" /> Live Logs
             </TabsTrigger>
-                <TabsTrigger value="monitors" className="flex items-center gap-2">
-                  <Activity className="w-4 h-4" />
-                  Monitors
-                </TabsTrigger>
+            <TabsTrigger value="monitors" className="flex items-center gap-2">
+              <Activity className="w-4 h-4" />
+              Monitors
+            </TabsTrigger>
 
             <TabsTrigger value="history" className="flex items-center gap-2">
               <History className="w-4 h-4" /> History
@@ -717,7 +726,10 @@ export default function Home() {
             <Card>
               <CardHeader>
                 <CardTitle>Continuous Monitoring</CardTitle>
-                <CardDescription>Set up background tests to monitor your favorite domains over time.</CardDescription>
+                <CardDescription>
+                  Set up background tests to monitor your favorite domains over
+                  time.
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 {!isSupabaseConfigured ? (
@@ -732,17 +744,37 @@ export default function Home() {
                   </div>
                 ) : (
                   <div className="space-y-6">
-                    <form onSubmit={handleCreateMonitor} className="space-y-4 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-lg border border-slate-200 dark:border-slate-800">
+                    <form
+                      onSubmit={handleCreateMonitor}
+                      className="space-y-4 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-lg border border-slate-200 dark:border-slate-800"
+                    >
                       <div className="grid gap-4 md:grid-cols-4">
                         <div className="md:col-span-3">
-                          <label className="text-sm font-medium mb-1.5 block">Domains to monitor (one per line)</label>
-                          <Textarea value={monitorDomains} onChange={e => setMonitorDomains(e.target.value)} placeholder="e.g. google.com
-cloudflare.com" className="font-mono text-sm resize-none" rows={3} required />
+                          <label className="text-sm font-medium mb-1.5 block">
+                            Domains to monitor (one per line)
+                          </label>
+                          <Textarea
+                            value={monitorDomains}
+                            onChange={e => setMonitorDomains(e.target.value)}
+                            placeholder="e.g. google.com
+cloudflare.com"
+                            className="font-mono text-sm resize-none"
+                            rows={3}
+                            required
+                          />
                         </div>
                         <div className="flex flex-col justify-between">
                           <div>
-                            <label className="text-sm font-medium mb-1.5 block">Interval</label>
-                            <select value={monitorInterval} onChange={e => setMonitorInterval(Number(e.target.value))} className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-800 dark:bg-slate-950 dark:ring-offset-slate-950 dark:focus-visible:ring-slate-300">
+                            <label className="text-sm font-medium mb-1.5 block">
+                              Interval
+                            </label>
+                            <select
+                              value={monitorInterval}
+                              onChange={e =>
+                                setMonitorInterval(Number(e.target.value))
+                              }
+                              className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-800 dark:bg-slate-950 dark:ring-offset-slate-950 dark:focus-visible:ring-slate-300"
+                            >
                               <option value={30}>30 seconds</option>
                               <option value={60}>1 minute</option>
                               <option value={300}>5 minutes</option>
@@ -750,29 +782,66 @@ cloudflare.com" className="font-mono text-sm resize-none" rows={3} required />
                               <option value={3600}>1 hour</option>
                             </select>
                           </div>
-                          <Button type="submit" disabled={isCreatingMonitor} className="w-full mt-2">Create Monitor</Button>
+                          <Button
+                            type="submit"
+                            disabled={isCreatingMonitor}
+                            className="w-full mt-2"
+                          >
+                            Create Monitor
+                          </Button>
                         </div>
                       </div>
                     </form>
 
                     {monitors.length > 0 ? (
                       <div className="space-y-3">
-                        <h3 className="font-semibold text-sm text-slate-500 uppercase tracking-wider">Active Monitors</h3>
+                        <h3 className="font-semibold text-sm text-slate-500 uppercase tracking-wider">
+                          Active Monitors
+                        </h3>
                         {monitors.map(monitor => (
-                          <div key={monitor.id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg gap-4">
+                          <div
+                            key={monitor.id}
+                            className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg gap-4"
+                          >
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-1">
-                                <span className={`w-2 h-2 rounded-full ${activeMonitors.has(monitor.id) ? "bg-green-500 animate-pulse" : "bg-slate-300 dark:bg-slate-700"}`}></span>
-                                <span className="font-medium">Every {monitor.interval_seconds < 60 ? `${monitor.interval_seconds}s` : `${monitor.interval_seconds / 60}m`}</span>
-                                <span className="text-xs text-slate-400 font-mono">ID: {monitor.id.split("-")[0]}</span>
+                                <span
+                                  className={`w-2 h-2 rounded-full ${activeMonitors.has(monitor.id) ? "bg-green-500 animate-pulse" : "bg-slate-300 dark:bg-slate-700"}`}
+                                ></span>
+                                <span className="font-medium">
+                                  Every{" "}
+                                  {monitor.interval_seconds < 60
+                                    ? `${monitor.interval_seconds}s`
+                                    : `${monitor.interval_seconds / 60}m`}
+                                </span>
+                                <span className="text-xs text-slate-400 font-mono">
+                                  ID: {monitor.id.split("-")[0]}
+                                </span>
                               </div>
-                              <div className="text-sm text-slate-500 font-mono line-clamp-1">{monitor.domains.join(", ")}</div>
+                              <div className="text-sm text-slate-500 font-mono line-clamp-1">
+                                {monitor.domains.join(", ")}
+                              </div>
                             </div>
                             <div className="flex items-center gap-2 w-full sm:w-auto">
-                              <Button variant={activeMonitors.has(monitor.id) ? "outline" : "default"} size="sm" onClick={() => toggleMonitor(monitor.id)} className="flex-1 sm:flex-none">
-                                {activeMonitors.has(monitor.id) ? "Stop" : "Start"}
+                              <Button
+                                variant={
+                                  activeMonitors.has(monitor.id)
+                                    ? "outline"
+                                    : "default"
+                                }
+                                size="sm"
+                                onClick={() => toggleMonitor(monitor.id)}
+                                className="flex-1 sm:flex-none"
+                              >
+                                {activeMonitors.has(monitor.id)
+                                  ? "Stop"
+                                  : "Start"}
                               </Button>
-                              <Button variant="destructive" size="sm" onClick={() => handleDeleteMonitor(monitor.id)}>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onClick={() => handleDeleteMonitor(monitor.id)}
+                              >
                                 Delete
                               </Button>
                             </div>
