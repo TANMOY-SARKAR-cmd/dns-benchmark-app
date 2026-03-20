@@ -502,9 +502,9 @@ export default function Home() {
         <Tabs
           value={activeTab}
           onValueChange={setActiveTab}
-          className="space-y-6"
+          className="space-y-8"
         >
-          <TabsList className="grid grid-cols-4 lg:w-[600px]">
+          <TabsList className="flex flex-wrap sm:grid sm:grid-cols-5 md:w-auto h-auto min-h-10">
             <TabsTrigger value="benchmark" className="flex items-center gap-2">
               <Play className="w-4 h-4" /> Benchmark
             </TabsTrigger>
@@ -527,7 +527,7 @@ export default function Home() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="benchmark" className="space-y-6">
+          <TabsContent value="benchmark" className="space-y-8">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Input Section */}
               <div className="md:col-span-2">
@@ -547,7 +547,32 @@ export default function Home() {
                       className="min-h-32 resize-none font-mono text-sm"
                       disabled={isLoading}
                     />
-                    <div className="flex gap-2"></div>
+                    <div className="flex flex-col sm:flex-row gap-4 mt-4">
+                      <Button
+                        variant="outline"
+                        onClick={handleUsePopular}
+                        disabled={isLoading}
+                        className="flex-1"
+                      >
+                        Use Popular Domains
+                      </Button>
+                      <Button
+                        onClick={handleTest}
+                        disabled={isLoading}
+                        className="flex-1"
+                      >
+                        {isLoading ? (
+                          <>
+                            <span className="animate-spin mr-2">⏳</span>{" "}
+                            Running...
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-4 h-4 mr-2" /> Run DNS Test
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               </div>
@@ -601,7 +626,7 @@ export default function Home() {
 
             {/* Results Section */}
             {testResults && !isLoading && (
-              <div className="space-y-6">
+              <div className="space-y-8">
                 {/* Chart */}
                 {chartData.length > 0 && (
                   <Card>
@@ -743,7 +768,7 @@ export default function Home() {
                     <p>Please log in to set up background monitors.</p>
                   </div>
                 ) : (
-                  <div className="space-y-6">
+                  <div className="space-y-8">
                     <form
                       onSubmit={handleCreateMonitor}
                       className="space-y-4 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-lg border border-slate-200 dark:border-slate-800"
