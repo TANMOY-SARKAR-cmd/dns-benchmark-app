@@ -38,6 +38,7 @@ import {
   Activity,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
+import { AuthButton } from "@/components/AuthButton";
 import { toast } from "sonner";
 
 export default function Home() {
@@ -58,6 +59,7 @@ export default function Home() {
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [history, setHistory] = useState<any[]>([]);
   const [liveLogs, setLiveLogs] = useState<any[]>([]);
+  const [session, setSession] = useState<any>(null);
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -66,6 +68,18 @@ export default function Home() {
     const sb = supabase;
 
     // Fetch initial leaderboard and history
+    // Fetch session
+    sb.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
+
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = sb.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
     fetchLeaderboard();
     fetchHistory();
 
@@ -88,11 +102,11 @@ export default function Home() {
 
     return () => {
       sb.removeChannel(channel);
+      subscription.unsubscribe();
     };
   }, []);
 
   const fetchLeaderboard = async () => {
-
     try {
       const { data, error } = await supabase.from("leaderboard").select("*");
       if (error) {
@@ -106,7 +120,6 @@ export default function Home() {
   };
 
   const fetchHistory = async () => {
-
     try {
       const { data, error } = await supabase
         .from("benchmark_results")
@@ -135,7 +148,13 @@ export default function Home() {
       /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
     const rawDomains = domainsInput
       .split(/[\n,]+/)
-      .map(d => d.trim().replace(/^https?:\/\//i, "").split("/")[0])
+      .map(
+        d =>
+          d
+            .trim()
+            .replace(/^https?:\/\//i, "")
+            .split("/")[0]
+      )
       .filter(d => d.length > 0);
 
     const domains = rawDomains.filter(d => VALID_DOMAIN_PATTERN.test(d));
@@ -160,6 +179,9 @@ export default function Home() {
     setIsLoading(true);
     setProgress(0);
     setTestResults(null);
+
+    const { data } = await supabase.auth.getUser();
+    const userId = data?.user?.id || "anonymous";
     const results: Record<
       string,
       Record<string, BenchmarkResult | "Error">
@@ -188,23 +210,23 @@ export default function Home() {
 
                   if (result.successRate > 0) {
                     allQueries.push({
-                      user_id: "anonymous",
+                      user_id: userId,
                       domain,
                       upstream_provider: provider.name,
                       latency_ms: result.avgLatency,
                       status: "success",
-                      created_at: new Date().toISOString()
+                      created_at: new Date().toISOString(),
                     });
                   }
                 } catch (error) {
                   results[domain][provider.name] = "Error";
                   allQueries.push({
-                    user_id: "anonymous",
+                    user_id: userId,
                     domain,
                     upstream_provider: provider.name,
                     latency_ms: 0,
                     status: "failed",
-                    created_at: new Date().toISOString()
+                    created_at: new Date().toISOString(),
                   });
                 }
                 completed++;
@@ -224,9 +246,7 @@ export default function Home() {
         for (let i = 0; i < allQueries.length; i += 50) {
           const batch = allQueries.slice(i, i + 50);
           console.log("Inserting DNS queries:", batch);
-          const { error } = await supabase
-            .from("dns_queries")
-            .insert(batch);
+          const { error } = await supabase.from("dns_queries").insert(batch);
           if (error) {
             console.error("Supabase error:", error);
           }
@@ -239,12 +259,14 @@ export default function Home() {
             domain: q.domain,
             provider: q.upstream_provider,
             latency_ms: q.latency_ms,
-            tested_at: q.created_at
+            tested_at: q.created_at,
           }));
 
         if (benchmarkResults.length > 0) {
           console.log("Inserting benchmark results:", benchmarkResults);
-          const { error } = await supabase.from("benchmark_results").insert(benchmarkResults);
+          const { error } = await supabase
+            .from("benchmark_results")
+            .insert(benchmarkResults);
           if (error) {
             console.error("Supabase error:", error);
           }
@@ -325,18 +347,25 @@ export default function Home() {
               Client-side DoH performance testing
             </p>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            onClick={() => setTheme?.(theme === "dark" ? "light" : "dark")}
-          >
-            {theme === "dark" ? (
-              <Sun className="w-5 h-5" />
-            ) : (
-              <Moon className="w-5 h-5" />
-            )}
-          </Button>
+          <div className="flex items-center gap-2">
+            <AuthButton />
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={
+                theme === "dark"
+                  ? "Switch to light mode"
+                  : "Switch to dark mode"
+              }
+              onClick={() => setTheme?.(theme === "dark" ? "light" : "dark")}
+            >
+              {theme === "dark" ? (
+                <Sun className="w-5 h-5" />
+              ) : (
+                <Moon className="w-5 h-5" />
+              )}
+            </Button>
+          </div>
         </div>
 
         <Tabs
@@ -382,30 +411,7 @@ export default function Home() {
                       className="min-h-32 resize-none font-mono text-sm"
                       disabled={isLoading}
                     />
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        onClick={handleUsePopular}
-                        disabled={isLoading}
-                        className="flex-1"
-                      >
-                        Use Popular Domains
-                      </Button>
-                      <Button
-                        onClick={handleTest}
-                        disabled={isLoading || domainsInput.trim().length === 0}
-                        className="flex-1"
-                      >
-                        {isLoading ? (
-                          <>
-                            <div className="w-4 h-4 mr-2 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                            Testing...
-                          </>
-                        ) : (
-                          "Run DNS Test"
-                        )}
-                      </Button>
-                    </div>
+                    <div className="flex gap-2"></div>
                   </CardContent>
                 </Card>
               </div>
@@ -508,14 +514,6 @@ export default function Home() {
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between">
                     <CardTitle>Detailed Results</CardTitle>
-                    <Button
-                      onClick={handleExportCSV}
-                      variant="outline"
-                      size="sm"
-                      className="flex items-center gap-2"
-                    >
-                      <Download className="w-4 h-4" /> Export CSV
-                    </Button>
                   </CardHeader>
                   <CardContent>
                     <div className="overflow-x-auto">
@@ -635,13 +633,17 @@ export default function Home() {
                             <span className="font-mono text-slate-500">
                               {timeLabel}
                             </span>
-                            <span className="font-semibold">{log.upstream_provider}</span>
+                            <span className="font-semibold">
+                              {log.upstream_provider}
+                            </span>
                             <span className="font-mono">{log.domain}</span>
                           </div>
                           <div
                             className={`font-semibold ${log.status === "success" ? "text-green-600" : "text-red-600"}`}
                           >
-                            {log.status === "success" ? `${log.latency_ms}ms` : "Failed"}
+                            {log.status === "success"
+                              ? `${log.latency_ms}ms`
+                              : "Failed"}
                           </div>
                         </div>
                       );
