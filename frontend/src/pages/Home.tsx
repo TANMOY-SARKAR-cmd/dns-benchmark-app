@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -71,6 +71,7 @@ export default function Home() {
   const [monitorDomains, setMonitorDomains] = useState("");
   const [monitorInterval, setMonitorInterval] = useState(60);
   const [isCreatingMonitor, setIsCreatingMonitor] = useState(false);
+  const [lastChecked, setLastChecked] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -141,25 +142,58 @@ export default function Home() {
     }
   };
 
+  const activeIntervals = useRef<Record<string, { id: NodeJS.Timeout, interval: number, domainsStr: string }>>({});
+
   useEffect(() => {
-    const intervals: Record<string, NodeJS.Timeout> = {};
+    if (!user) {
+      Object.values(activeIntervals.current).forEach(item => clearInterval(item.id));
+      activeIntervals.current = {};
+      return;
+    }
+
+    const activeMonitorIds = new Set<string>();
 
     monitors.forEach(monitor => {
       if (monitor.is_active) {
-        // Run immediately when started
-        runMonitorBenchmark(monitor.domains, user?.id || "anonymous");
+        activeMonitorIds.add(monitor.id);
+        const currentSetup = activeIntervals.current[monitor.id];
 
-        // Then set up interval
-        intervals[monitor.id] = setInterval(() => {
-          runMonitorBenchmark(monitor.domains, user?.id || "anonymous");
-        }, monitor.interval_seconds * 1000);
+        const monitorDomainsStr = monitor.domains.join(",");
+        if (!currentSetup || currentSetup.interval !== monitor.interval_seconds || currentSetup.domainsStr !== monitorDomainsStr) {
+          if (currentSetup) clearInterval(currentSetup.id);
+
+          const runTest = async () => {
+            await runMonitorBenchmark(monitor.domains, user.id);
+            setLastChecked(prev => ({
+              ...prev,
+              [monitor.id]: new Date().toLocaleTimeString()
+            }));
+          };
+
+          if (!currentSetup) {
+            runTest();
+          }
+
+          const intervalId = setInterval(runTest, monitor.interval_seconds * 1000);
+          activeIntervals.current[monitor.id] = { id: intervalId, interval: monitor.interval_seconds, domainsStr: monitorDomainsStr };
+        }
       }
     });
 
-    return () => {
-      Object.values(intervals).forEach(clearInterval);
-    };
+    Object.keys(activeIntervals.current).forEach(id => {
+      if (!activeMonitorIds.has(id)) {
+        clearInterval(activeIntervals.current[id].id);
+        delete activeIntervals.current[id];
+      }
+    });
+
   }, [monitors, user]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(activeIntervals.current).forEach(item => clearInterval(item.id));
+    };
+  }, []);
 
   const handleCreateMonitor = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -883,10 +917,10 @@ cloudflare.com"
                                   className={`w-2 h-2 rounded-full ${monitor.is_active ? "bg-green-500 animate-pulse" : "bg-slate-300 dark:bg-slate-700"}`}
                                 ></span>
                                 <span className="font-medium">
-                                  Every{" "}
+                                  {monitor.is_active ? "Running" : "Stopped"} (Every{" "}
                                   {monitor.interval_seconds < 60
                                     ? `${monitor.interval_seconds}s`
-                                    : `${monitor.interval_seconds / 60}m`}
+                                    : `${monitor.interval_seconds / 60}m`})
                                 </span>
                                 <span className="text-xs text-slate-400 font-mono">
                                   ID: {monitor.id.split("-")[0]}
@@ -894,6 +928,9 @@ cloudflare.com"
                               </div>
                               <div className="text-sm text-slate-500 font-mono line-clamp-1">
                                 {monitor.domains.join(", ")}
+                              </div>
+                              <div className="text-xs text-slate-500 mt-1">
+                                Last checked: {lastChecked[monitor.id] || "Never"}
                               </div>
                             </div>
                             <div className="flex items-center gap-2 w-full sm:w-auto">
