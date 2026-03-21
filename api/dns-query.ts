@@ -1,9 +1,45 @@
+import dns from "node:dns";
+
 // api/dns-query.ts
 // Vercel serverless function — Web Fetch API style (Request/Response).
 // Supports single and batch DNS-over-HTTPS queries with concurrency limiting,
 // per-request timeouts, a global timeout, and structured logging.
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── Constants
+
+const DNS_IPS: Record<string, string> = {
+  google: "8.8.8.8",
+  cloudflare: "1.1.1.1",
+  quad9: "9.9.9.9",
+  adguard: "94.140.14.14",
+  opendns: "208.67.222.222",
+};
+
+function resolveWithNativeDNS(
+  domain: string,
+  nameserver: string,
+  timeoutMs = 2500
+): Promise<number | null> {
+  return new Promise(resolve => {
+    const resolver = new dns.Resolver();
+    resolver.setServers([nameserver]);
+
+    const start = Date.now();
+
+    const timeout = setTimeout(() => {
+      resolve(null);
+    }, timeoutMs);
+
+    resolver.resolve4(domain, err => {
+      clearTimeout(timeout);
+      if (err) {
+        resolve(null);
+      } else {
+        resolve(Date.now() - start);
+      }
+    });
+  });
+}
 
 const CORS_HEADERS: Record<string, string> = {
   "Content-Type": "application/json",
@@ -39,7 +75,7 @@ interface DnsResult {
   provider: string;
   latency: number | null;
   success: boolean;
-  method: "server" | "client" | "fallback";
+  method: "server-udp" | "server-doh" | "fallback" | "failed";
   error: string | null;
 }
 
@@ -49,11 +85,29 @@ async function resolveDnsQuery(
   domain: string,
   provider: string
 ): Promise<DnsResult> {
-  const base: Omit<DnsResult, "success" | "latency" | "error"> = {
+  const base: Omit<DnsResult, "success" | "latency" | "error" | "method"> = {
     domain,
     provider,
-    method: "server",
   };
+
+  const udpIp = DNS_IPS[provider];
+  let method: DnsResult["method"] = "failed";
+
+  if (udpIp) {
+    const nativeLatency = await resolveWithNativeDNS(domain, udpIp);
+    if (nativeLatency !== null) {
+      method = "server-udp";
+      const result: DnsResult = {
+        ...base,
+        method,
+        success: true,
+        latency: nativeLatency,
+        error: null,
+      };
+      console.log({ provider, method, latency: nativeLatency, success: true });
+      return result;
+    }
+  }
 
   const url = DOH_ENDPOINTS[provider]; // already validated upstream
 
@@ -75,27 +129,44 @@ async function resolveDnsQuery(
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      return {
+      method = "failed";
+      const result: DnsResult = {
         ...base,
+        method,
         success: false,
         latency: null,
         error: `HTTP ${response.status}`,
       };
+      console.log({ provider, method, latency: null, success: false });
+      return result;
     }
 
     await response.json(); // consume body; we only need the RTT
     const latency = Date.now() - start;
 
-    return { ...base, success: true, latency, error: null };
+    method = "server-doh";
+    const result: DnsResult = {
+      ...base,
+      method,
+      success: true,
+      latency,
+      error: null,
+    };
+    console.log({ provider, method, latency, success: true });
+    return result;
   } catch (err: unknown) {
     clearTimeout(timeoutId);
     const isAbort = err instanceof Error && err.name === "AbortError";
-    return {
+    method = "failed";
+    const result: DnsResult = {
       ...base,
+      method,
       success: false,
       latency: null,
       error: isAbort ? "Timeout" : String(err),
     };
+    console.log({ provider, method, latency: null, success: false });
+    return result;
   }
 }
 
@@ -109,7 +180,6 @@ export async function OPTIONS(request: Request) {
 }
 
 export async function POST(request: Request) {
-
   // 3. Content-Type guard
   const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json")) {
@@ -243,7 +313,7 @@ export async function POST(request: Request) {
           provider: "unknown",
           latency: null,
           success: false,
-          method: "server",
+          method: "failed",
           error:
             outcome.reason instanceof Error
               ? outcome.reason.message

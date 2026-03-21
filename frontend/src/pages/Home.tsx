@@ -731,7 +731,11 @@ export default function Home() {
         // Finalize results for all providers for this domain
         for (const provider of userProviders) {
           let serverResult = null;
-          if (batchData && batchData.results && Array.isArray(batchData.results)) {
+          if (
+            batchData &&
+            batchData.results &&
+            Array.isArray(batchData.results)
+          ) {
             serverResult = batchData.results.find(
               (r: any) => r.provider === provider.name && r.domain === domain
             );
@@ -746,9 +750,15 @@ export default function Home() {
           let final_latency = null;
           let fallback_used = true;
 
-          const serverSuccess = serverResult && serverResult.success && typeof serverResult.latency === "number";
+          const serverSuccess =
+            serverResult &&
+            serverResult.success &&
+            typeof serverResult.latency === "number";
 
-          const clientSuccess = clientResult && clientResult !== "Error" && clientResult.successRate > 0;
+          const clientSuccess =
+            clientResult &&
+            clientResult !== "Error" &&
+            clientResult.successRate > 0;
 
           if (serverSuccess) {
             final_success = true;
@@ -1133,7 +1143,9 @@ export default function Home() {
                                   badgeText = "Failed";
                                 } else if (
                                   result &&
-                                  result.method === "server"
+                                  (result.method === "server" ||
+                                    result.method === "server-udp" ||
+                                    result.method === "server-doh")
                                 ) {
                                   badgeColor =
                                     "bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400";
@@ -1564,7 +1576,7 @@ cloudflare.com"
                                 <td className="py-3 px-4">
                                   {record.method_used ? (
                                     <span
-                                      className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-medium ${record.method_used === "server" ? "bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400" : record.method_used === "client" || record.method_used === "client-fallback" ? "bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400" : "bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-400"}`}
+                                      className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-medium ${record.method_used === "server" || record.method_used === "server-udp" || record.method_used === "server-doh" ? "bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400" : record.method_used === "client" || record.method_used === "client-fallback" ? "bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400" : "bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-400"}`}
                                     >
                                       {record.method_used}
                                       {}
