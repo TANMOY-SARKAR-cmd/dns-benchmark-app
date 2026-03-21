@@ -447,12 +447,101 @@ export default function Home() {
 
   const fetchLeaderboard = async () => {
     try {
-      const { data, error } = await supabase.from("leaderboard").select("*");
-      if (error) {
-        console.error("Supabase error:", error);
-        throw error;
+      let dataToProcess = [];
+
+      if (user) {
+        // Fetch personal performance from dns_queries
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+        const { data, error } = await supabase
+          .from("dns_queries")
+          .select("provider, latency_ms, success")
+          .eq("user_id", user.id)
+          .gte("tested_at", thirtyDaysAgo.toISOString());
+
+        if (error) {
+          console.error("Supabase error:", error);
+          throw error;
+        }
+
+        // Aggregate data manually
+        const agg: Record<
+          string,
+          { latencies: number[]; successCount: number; total: number }
+        > = {};
+        for (const row of data || []) {
+          if (!agg[row.provider]) {
+            agg[row.provider] = { latencies: [], successCount: 0, total: 0 };
+          }
+          agg[row.provider].total += 1;
+          if (row.success) {
+            agg[row.provider].successCount += 1;
+            if (row.latency_ms !== null) {
+              agg[row.provider].latencies.push(row.latency_ms);
+            }
+          }
+        }
+
+        dataToProcess = Object.entries(agg).map(([provider, stats]) => {
+          const success_rate = (stats.successCount / stats.total) * 100;
+          const avg_latency =
+            stats.latencies.length > 0
+              ? stats.latencies.reduce((a, b) => a + b, 0) /
+                stats.latencies.length
+              : null;
+
+          let jitter = null;
+          if (stats.latencies.length > 1 && avg_latency !== null) {
+            const variance =
+              stats.latencies.reduce(
+                (sum, lat) => sum + Math.pow(lat - avg_latency, 2),
+                0
+              ) /
+              (stats.latencies.length - 1);
+            jitter = Math.sqrt(variance);
+          } else if (stats.latencies.length === 1) {
+            jitter = avg_latency;
+          }
+
+          return {
+            provider,
+            avg_latency,
+            success_rate,
+            jitter,
+            total_tests: stats.total,
+          };
+        });
+      } else {
+        // Fetch global leaderboard from view
+        const { data, error } = await supabase.from("leaderboard").select("*");
+        if (error) {
+          console.error("Supabase error:", error);
+          throw error;
+        }
+        dataToProcess = data || [];
       }
-      setLeaderboard(data || []);
+
+      // Calculate score and replace null jitter
+      const processedLeaderboard = dataToProcess.map((item: any) => {
+        let jitter = item.jitter === null ? item.avg_latency : item.jitter;
+        let score = 0;
+
+        if (item.success_rate !== 0 && item.avg_latency !== null) {
+          score =
+            item.success_rate * 0.5 +
+            (1000 / item.avg_latency) * 0.3 +
+            (1000 / jitter) * 0.2;
+        }
+
+        return {
+          ...item,
+          jitter,
+          score,
+        };
+      });
+
+      setLeaderboard(processedLeaderboard);
     } catch (e) {
       console.error("Leaderboard fetch error", e);
     }
@@ -1506,9 +1595,11 @@ cloudflare.com"
           <TabsContent value="leaderboard">
             <Card>
               <CardHeader>
-                <CardTitle>Global Leaderboard</CardTitle>
+                <CardTitle>
+                  {user ? "Your DNS Performance" : "Global DNS Performance"}
+                </CardTitle>
                 <CardDescription>
-                  Average latency by provider across all users
+                  Ranked by speed, reliability, and stability
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -1528,50 +1619,123 @@ cloudflare.com"
                     </p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {leaderboard
-                      .sort((a, b) => a.global_avg_ms - b.global_avg_ms)
-                      .map((item, index) => {
-                        const provider = userProviders.find(
-                          p => p.name === item.provider
-                        );
-                        return (
-                          <Card key={item.provider} className="overflow-hidden">
-                            <div className="flex items-center p-4 gap-4">
-                              <div
-                                className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white ${index === 0 ? "bg-yellow-500" : index === 1 ? "bg-slate-400" : index === 2 ? "bg-amber-700" : "bg-slate-800"}`}
-                              >
-                                #{index + 1}
-                              </div>
-                              <div className="flex-1">
-                                <h3 className="font-bold text-lg">
-                                  {item.provider}
-                                </h3>
-                                <p
-                                  className="text-2xl font-black"
-                                  style={{ color: provider?.color }}
-                                >
-                                  {isNaN(item.global_avg_ms) ||
-                                  item.global_avg_ms === null
-                                    ? "No data"
-                                    : Math.round(item.global_avg_ms)}
-                                  <span className="text-sm font-normal text-slate-500">
-                                    ms
-                                  </span>
-                                </p>
-                                {item.success_rate !== undefined && (
-                                  <p className="text-sm text-slate-500 mt-1">
-                                    Reliability:{" "}
-                                    <span className="font-medium text-slate-700 dark:text-slate-300">
-                                      {Number(item.success_rate).toFixed(1)}%
-                                    </span>
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          </Card>
-                        );
-                      })}
+                  <div className="space-y-6">
+                    {leaderboard.length > 0 && (
+                      <div className="bg-slate-100 dark:bg-slate-800 p-4 rounded-lg flex items-center gap-2">
+                        <Trophy className="w-5 h-5 text-yellow-500" />
+                        <p className="font-semibold">
+                          Recommended DNS:{" "}
+                          <span className="text-primary">
+                            {
+                              leaderboard.sort((a, b) => b.score - a.score)[0]
+                                ?.provider
+                            }
+                          </span>{" "}
+                          (Score:{" "}
+                          {leaderboard
+                            .sort((a, b) => b.score - a.score)[0]
+                            ?.score.toFixed(1)}
+                          )
+                        </p>
+                      </div>
+                    )}
+                    <div className="rounded-md border">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left">
+                          <thead className="text-xs text-slate-500 bg-slate-50 dark:bg-slate-800 uppercase">
+                            <tr>
+                              <th className="px-4 py-3 font-medium">Rank</th>
+                              <th className="px-4 py-3 font-medium">
+                                Provider
+                              </th>
+                              <th className="px-4 py-3 font-medium">Latency</th>
+                              <th className="px-4 py-3 font-medium">
+                                Success %
+                              </th>
+                              <th className="px-4 py-3 font-medium">Jitter</th>
+                              <th className="px-4 py-3 font-medium">Score</th>
+                              <th className="px-4 py-3 font-medium">Tests</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {leaderboard
+                              .sort((a, b) => b.score - a.score)
+                              .map((item, index) => {
+                                const provider = userProviders.find(
+                                  p => p.name === item.provider
+                                );
+
+                                // Color logic
+                                let successColor = "text-red-500";
+                                if (item.success_rate >= 95)
+                                  successColor = "text-green-500";
+                                else if (item.success_rate >= 80)
+                                  successColor = "text-yellow-500";
+
+                                let latencyColor = "text-red-500";
+                                if (item.avg_latency < 100)
+                                  latencyColor = "text-green-500";
+                                else if (item.avg_latency <= 250)
+                                  latencyColor = "text-yellow-500";
+
+                                return (
+                                  <tr
+                                    key={item.provider}
+                                    className="border-b last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                                  >
+                                    <td className="px-4 py-3">
+                                      <div
+                                        className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white text-xs ${index === 0 ? "bg-yellow-500" : index === 1 ? "bg-slate-400" : index === 2 ? "bg-amber-700" : "bg-slate-800"}`}
+                                      >
+                                        #{index + 1}
+                                      </div>
+                                    </td>
+                                    <td
+                                      className="px-4 py-3 font-bold"
+                                      style={{ color: provider?.color }}
+                                    >
+                                      {item.provider}
+                                    </td>
+                                    <td
+                                      className={`px-4 py-3 font-medium ${latencyColor}`}
+                                    >
+                                      {item.avg_latency === null ||
+                                      isNaN(item.avg_latency)
+                                        ? "N/A"
+                                        : Math.round(item.avg_latency)}{" "}
+                                      ms
+                                    </td>
+                                    <td
+                                      className={`px-4 py-3 font-medium ${successColor}`}
+                                    >
+                                      {item.success_rate === null ||
+                                      isNaN(item.success_rate)
+                                        ? "N/A"
+                                        : Math.round(item.success_rate)}
+                                      %
+                                    </td>
+                                    <td className="px-4 py-3">
+                                      {item.jitter === null ||
+                                      isNaN(item.jitter)
+                                        ? "N/A"
+                                        : Math.round(item.jitter)}{" "}
+                                      ms
+                                    </td>
+                                    <td className="px-4 py-3 font-black text-primary">
+                                      {item.score === null || isNaN(item.score)
+                                        ? "0.0"
+                                        : item.score.toFixed(1)}
+                                    </td>
+                                    <td className="px-4 py-3 text-slate-500">
+                                      {item.total_tests || 0}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
                   </div>
                 )}
               </CardContent>
