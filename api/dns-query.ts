@@ -17,13 +17,32 @@ export default async function handler(req: Request) {
     });
   }
 
-  let domain = "unknown";
-  let provider = "unknown";
-
   try {
     const body = await req.json();
-    domain = body.domain;
-    provider = body.provider;
+
+    // Handle batched queries
+    if (body.queries && Array.isArray(body.queries)) {
+      const results = await Promise.all(
+        body.queries.map(async (query: any) => {
+          return await resolveDnsQuery(
+            query.domain,
+            query.provider,
+            query.customIp
+          );
+        })
+      );
+
+      return new Response(JSON.stringify({ results }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+        },
+      });
+    }
+
+    // Handle single query
+    const { domain, provider, customIp } = body;
 
     if (!domain || !provider) {
       return new Response(
@@ -35,12 +54,47 @@ export default async function handler(req: Request) {
       );
     }
 
-    const ip = PROVIDER_IPS[provider];
-    if (!ip) {
-      return new Response(JSON.stringify({ error: "Invalid provider" }), {
-        status: 400,
+    const result = await resolveDnsQuery(domain, provider, customIp);
+
+    return new Response(JSON.stringify(result), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store",
+      },
+    });
+  } catch (error: any) {
+    return new Response(
+      JSON.stringify({
+        success: false,
+        latency: null,
+        error: error.message || "Internal server error",
+      }),
+      {
+        status: 500,
         headers: { "Content-Type": "application/json" },
-      });
+      }
+    );
+  }
+}
+
+async function resolveDnsQuery(
+  domain: string,
+  provider: string,
+  customIp?: string
+) {
+  try {
+    const ip = customIp || PROVIDER_IPS[provider];
+
+    if (!ip) {
+      return {
+        success: false,
+        latency: null,
+        provider,
+        domain,
+        method: "server",
+        error: "Invalid provider and no custom IP supplied",
+      };
     }
 
     const resolver = new dns.Resolver();
@@ -57,34 +111,21 @@ export default async function handler(req: Request) {
 
     const latency = performance.now() - start;
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        latency,
-        provider,
-        domain,
-      }),
-      {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-store",
-        },
-      }
-    );
+    return {
+      success: true,
+      latency,
+      provider,
+      domain,
+      method: "server",
+    };
   } catch (error: any) {
-    return new Response(
-      JSON.stringify({
-        success: false,
-        latency: null,
-        provider,
-        domain,
-        error: error.message || "Internal server error",
-      }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+    return {
+      success: false,
+      latency: null,
+      provider,
+      domain,
+      method: "server",
+      error: error.message || "Resolution failed",
+    };
   }
 }

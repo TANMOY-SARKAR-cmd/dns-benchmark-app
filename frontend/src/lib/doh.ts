@@ -49,6 +49,7 @@ export type BenchmarkResult = {
   queriesPerSec: number;
   verified: boolean;
   method: "server" | "client" | "mixed";
+  fallbackUsed?: boolean;
 };
 
 async function fetchWithTimeout(
@@ -209,6 +210,7 @@ export type ResolveDNSResult = {
   success: boolean;
   verified: boolean;
   method: "server" | "client";
+  fallbackUsed: boolean;
 };
 
 async function resolveDNS(
@@ -245,6 +247,7 @@ async function resolveDNS(
           success: true,
           verified: data.verified,
           method: "server",
+          fallbackUsed: false,
         };
       }
     }
@@ -254,7 +257,13 @@ async function resolveDNS(
 
   // If timeout already reached during server try, fail early
   if (controller.signal.aborted) {
-    return { latency: 0, success: false, verified: false, method: "client" };
+    return {
+      latency: 0,
+      success: false,
+      verified: false,
+      method: "client",
+      fallbackUsed: true,
+    };
   }
 
   // Custom provider without valid DoH url shouldn't race the client methods since they'll fail anyway
@@ -263,7 +272,13 @@ async function resolveDNS(
     (!provider.url || !provider.url.startsWith("https://"))
   ) {
     clearTimeout(timeoutId);
-    return { latency: 0, success: false, verified: false, method: "client" };
+    return {
+      latency: 0,
+      success: false,
+      verified: false,
+      method: "client",
+      fallbackUsed: true,
+    };
   }
 
   // 2. Fallback to client multi-method racing
@@ -307,6 +322,7 @@ async function resolveDNS(
       return {
         ...raceResult,
         method: "client",
+        fallbackUsed: true,
       };
     }
   } catch (e) {
@@ -314,7 +330,13 @@ async function resolveDNS(
   }
 
   clearTimeout(timeoutId);
-  return { latency: 0, success: false, verified: false, method: "client" };
+  return {
+    latency: 0,
+    success: false,
+    verified: false,
+    method: "client",
+    fallbackUsed: true,
+  };
 }
 
 export async function measureDoHBatch(
@@ -455,5 +477,6 @@ export async function measureDoH(
     verified: verified,
     method:
       usedServer && usedClient ? "mixed" : usedServer ? "server" : "client",
+    fallbackUsed: usedClient && usedServer,
   };
 }
