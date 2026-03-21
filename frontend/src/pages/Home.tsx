@@ -536,63 +536,93 @@ export default function Home() {
     try {
       const allQueries: any[] = [];
 
-      // Process domains in batches of 5
-      for (let i = 0; i < domains.length; i += 5) {
-        const batchDomains = domains.slice(i, i + 5);
+            // Process one domain at a time, sending all providers in a single batch
+      for (const domain of domains) {
+        results[domain] = {};
 
-        await Promise.all(
-          batchDomains.map(async domain => {
-            results[domain] = {};
+        // Prepare queries for all providers for this domain
+        const queries = userProviders.map(p => ({
+          domain,
+          provider: p.name,
+          customIp: p.customIp
+        }));
 
-            await Promise.all(
-              userProviders.map(async provider => {
-                setProgressText(`Testing ${domain} on ${provider.name}...`);
+        setProgressText(`Testing ${domain}...`);
 
-                try {
-                  const result = await measureDoH(provider, domain);
-                  results[domain][provider.name] = result;
+        let batchData = null;
+        try {
+          const res = await fetch(new URL("/api/dns-query", window.location.origin).toString(), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ queries })
+          });
+          if (res.ok) {
+            batchData = await res.json();
+          }
+        } catch (e) {
+          // Ignore, fallback to client DoH handled below
+        }
 
-                  if (result.method === "client" || result.method === "mixed") {
-                    toast.warning(
-                      `Backend failed for ${provider.name}, using fallback`
-                    );
-                  }
+        // Process each provider
+        for (const provider of userProviders) {
+          try {
+            let serverResult = null;
+            if (batchData && batchData.results && Array.isArray(batchData.results)) {
+               serverResult = batchData.results.find((r: any) => r.provider === provider.name && r.domain === domain);
+            }
 
-                  if (result.successRate === 0) {
-                    toast.error(
-                      `All methods failed for ${provider.name} on ${domain}`
-                    );
-                  } else if (result.successRate > 0) {
-                    allQueries.push({
-                      user_id: userId,
-                      domain,
-                      upstream_provider: provider.name,
-                      latency_ms: result.avgLatency,
-                      status: "success",
-                      created_at: new Date().toISOString(),
-                      method_used: result.method,
-                      fallback_used: result.fallbackUsed,
-                    });
-                  }
-                } catch (error) {
-                  results[domain][provider.name] = "Error";
-                  allQueries.push({
-                    user_id: userId,
-                    domain,
-                    upstream_provider: provider.name,
-                    latency_ms: 0,
-                    status: "failed",
-                    created_at: new Date().toISOString(),
-                    method_used: "failed",
-                    fallback_used: true,
-                  });
-                }
-                completed++;
-                setProgress(Math.round((completed / total) * 100));
-              })
-            );
-          })
-        );
+            let finalResult: BenchmarkResult;
+
+            if (serverResult && serverResult.success && typeof serverResult.latency === "number") {
+              // Server succeeded
+              finalResult = {
+                avgLatency: serverResult.latency,
+                minLatency: serverResult.latency,
+                maxLatency: serverResult.latency,
+                successRate: 100,
+                queriesPerSec: 1, // Placeholder
+                verified: true,
+                method: "server",
+                fallbackUsed: false
+              };
+            } else {
+              // Fallback to client DoH
+              toast.warning(`Backend failed for ${provider.name}, using fallback`);
+              finalResult = await measureDoH(provider, domain);
+            }
+
+            results[domain][provider.name] = finalResult;
+
+            if (finalResult.successRate === 0) {
+              toast.error(`All methods failed for ${provider.name} on ${domain}`);
+            } else if (finalResult.successRate > 0) {
+              allQueries.push({
+                user_id: userId,
+                domain,
+                upstream_provider: provider.name,
+                latency_ms: finalResult.avgLatency,
+                status: "success",
+                created_at: new Date().toISOString(),
+                method_used: finalResult.method,
+                fallback_used: finalResult.fallbackUsed,
+              });
+            }
+          } catch (error) {
+             results[domain][provider.name] = "Error";
+             allQueries.push({
+                user_id: userId,
+                domain,
+                upstream_provider: provider.name,
+                latency_ms: 0,
+                status: "failed",
+                created_at: new Date().toISOString(),
+                method_used: "failed",
+                fallback_used: true,
+             });
+          }
+          completed++;
+          setProgress(Math.round((completed / total) * 100));
+        }
       }
 
       setTestResults(results);
@@ -909,69 +939,64 @@ export default function Home() {
                         <thead>
                           <tr className="border-b dark:border-slate-800">
                             <th className="py-3 px-4 font-semibold">Domain</th>
-                            {userProviders.map(provider => (
-                              <th
-                                key={provider.name}
-                                className="py-3 px-4 font-semibold text-center"
-                              >
-                                {provider.name}
-                              </th>
-                            ))}
+                            <th className="py-3 px-4 font-semibold">Provider</th>
+                            <th className="py-3 px-4 font-semibold text-center">Latency</th>
+                            <th className="py-3 px-4 font-semibold text-center">Method</th>
+                            <th className="py-3 px-4 font-semibold text-center">Status</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {Object.entries(testResults).map(
-                            ([domain, results]) => (
-                              <tr
-                                key={domain}
-                                className="border-b dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                              >
-                                <td className="py-3 px-4 font-mono">
-                                  {domain}
-                                </td>
-                                {userProviders.map(provider => {
-                                  const result = results[provider.name];
-                                  const isError = result === "Error" || !result;
-                                  return (
-                                    <td
-                                      key={provider.name}
-                                      className="py-3 px-4 text-center"
+                          {Object.entries(testResults).flatMap(([domain, results]) =>
+                            userProviders.map(provider => {
+                              const result = results[provider.name];
+                              const isError = result === "Error" || !result || result.successRate === 0;
+
+                              let badgeColor = "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-400";
+                              let badgeText = "-";
+
+                              if (isError || (result && result.method === "failed")) {
+                                badgeColor = "bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-400";
+                                badgeText = "Failed";
+                              } else if (result && result.method === "server") {
+                                badgeColor = "bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400";
+                                badgeText = "Server";
+                              } else if (result && (result.method === "client" || result.method === "mixed")) {
+                                badgeColor = "bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400";
+                                badgeText = "Browser";
+                              }
+
+                              return (
+                                <tr
+                                  key={`${domain}-${provider.name}`}
+                                  className="border-b dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                                >
+                                  <td className="py-3 px-4 font-mono">{domain}</td>
+                                  <td className="py-3 px-4 font-semibold">{provider.name}</td>
+                                  <td className="py-3 px-4 text-center">
+                                    {isError ? "-" : <span className="font-semibold">{result.avgLatency}ms</span>}
+                                  </td>
+                                  <td className="py-3 px-4 text-center">
+                                    <div
+                                      className={`text-[10px] inline-flex px-2 py-1 rounded font-mono font-medium ${badgeColor}`}
                                     >
-                                      {isError ? (
-                                        <span className="text-red-500 flex items-center justify-center gap-1 text-xs">
-                                          ❌ Failed
-                                        </span>
-                                      ) : (
-                                        <div>
-                                          <div className="font-semibold">
-                                            {result.avgLatency}ms
-                                          </div>
-                                          <div
-                                            className={`text-[10px] mt-1 inline-flex px-1.5 py-0.5 rounded font-mono font-medium ${result.method === "server" ? "bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400" : result.method === "client" ? "bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400" : "bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-400"}`}
-                                          >
-                                            {result.method}
-                                            {result.fallbackUsed
-                                              ? " (fallback)"
-                                              : ""}
-                                          </div>
-                                          <div className="text-xs text-slate-500 dark:text-slate-400">
-                                            {result.minLatency}-
-                                            {result.maxLatency}ms |{" "}
-                                            {result.successRate}%
-                                            {!result.verified && (
-                                              <div className="text-yellow-600 dark:text-yellow-500 mt-1">
-                                                ⚠️ Latency only (response not
-                                                verified)
-                                              </div>
-                                            )}
-                                          </div>
-                                        </div>
-                                      )}
-                                    </td>
-                                  );
-                                })}
-                              </tr>
-                            )
+                                      {badgeText}
+                                      {!isError && result && result.fallbackUsed ? " (fallback)" : ""}
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-4 text-center">
+                                    {isError ? (
+                                      <span className="text-red-500 flex items-center justify-center gap-1 text-xs">
+                                        ❌ Failed
+                                      </span>
+                                    ) : (
+                                      <span className="text-green-500 flex items-center justify-center gap-1 text-xs">
+                                        ✅ Success ({result.successRate}%)
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })
                           )}
                         </tbody>
                       </table>
@@ -1494,7 +1519,7 @@ cloudflare.com"
                                   className="text-2xl font-black"
                                   style={{ color: provider?.color }}
                                 >
-                                  {Math.round(item.global_avg_ms)}
+                                  {isNaN(item.global_avg_ms) || item.global_avg_ms === null ? "No data" : Math.round(item.global_avg_ms)}
                                   <span className="text-sm font-normal text-slate-500">
                                     ms
                                   </span>

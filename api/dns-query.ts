@@ -1,80 +1,57 @@
+export const config = { runtime: "nodejs" };
+
 export default async function handler(req: Request) {
-  // Only allow POST
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405 });
   }
 
   try {
     const body = await req.json();
 
-    // Handle batched queries
     if (body.queries && Array.isArray(body.queries)) {
-      const results = await Promise.all(
-        body.queries.map(async (query: any) => {
-          return await resolveDnsQuery(
-            query.domain,
-            query.provider,
-            query.customIp
-          );
-        })
+      const globalTimeout = new Promise(resolve =>
+        setTimeout(() => resolve("timeout"), 4000)
       );
 
-      return new Response(JSON.stringify({ results }), {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-store",
-        },
-      });
+      const dnsPromises = body.queries.map((q: any) =>
+        resolveDnsQuery(q.domain, q.provider, q.customIp)
+      );
+
+      const results = await Promise.race([
+        Promise.allSettled(dnsPromises),
+        globalTimeout
+      ]);
+
+      if (results === "timeout") {
+        return new Response(JSON.stringify({ success: false, error: "Batch timeout" }), { status: 200 });
+      }
+
+      const formatted = (results as PromiseSettledResult<any>[]).map(r =>
+        r.status === "fulfilled"
+          ? r.value
+          : { success: false, latency: null, method: "server" }
+      );
+
+      return new Response(JSON.stringify({ results: formatted }), { status: 200 });
     }
 
-    // Handle single query
     const { domain, provider, customDns, customIp } = body;
-
-    if (!domain || (!provider && !customDns && !customIp)) {
-      return new Response(
-        JSON.stringify({ error: "Missing domain or provider" }),
-        {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
-
     const result = await resolveDnsQuery(domain, provider, customDns || customIp);
 
-    return new Response(JSON.stringify(result), {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store",
-      },
-    });
-  } catch (error: any) {
-    return new Response(
-      JSON.stringify({
-        success: false,
-        latency: null,
-        method: "server",
-        error: error.message || "Internal server error",
-      }),
-      {
-        status: 200, // Returning 200 with success: false as requested
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+    return new Response(JSON.stringify(result), { status: 200 });
+
+  } catch (err: any) {
+    return new Response(JSON.stringify({
+      success: false,
+      latency: null,
+      method: "server",
+      error: err.message
+    }), { status: 200 });
   }
 }
 
-async function resolveDnsQuery(
-  domain: string,
-  provider: string,
-  customIp?: string
-) {
-  const DOH_ENDPOINTS: Record<string, string> = {
+async function resolveDnsQuery(domain: string, provider: string, customIp?: string) {
+  const DOH: Record<string, string> = {
     google: "https://dns.google/resolve",
     cloudflare: "https://cloudflare-dns.com/dns-query",
     quad9: "https://dns.quad9.net/dns-query",
@@ -83,74 +60,34 @@ async function resolveDnsQuery(
   };
 
   try {
-    let url = "";
-    if (provider) {
-        url = DOH_ENDPOINTS[provider.toLowerCase()];
-    }
-
-    // If custom DNS/IP is provided and no matching DoH endpoint exists, fail for now since the user only wanted DOH.
-    // Or we can try to form a URL if customIp looks like a URL.
-    if (!url && customIp && customIp.startsWith('http')) {
-        url = customIp;
-    }
-
-    if (!url) {
-      return {
-        success: false,
-        latency: null,
-        provider,
-        domain,
-        method: "server",
-        error: "Invalid provider or unsupported custom IP/DNS via DoH",
-      };
-    }
+    let url = DOH[provider?.toLowerCase()];
+    if (!url && customIp && customIp.startsWith("http")) url = customIp;
+    if (!url) return { success: false, latency: null, provider, domain, method: "server" };
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2500);
+    const timeout = setTimeout(() => controller.abort(), 2000);
 
     const start = Date.now();
 
-    const response = await fetch(
-      `${url}?name=${domain}&type=A`,
-      {
-        method: "GET",
-        headers: { accept: "application/dns-json" },
-        signal: controller.signal
-      }
-    );
+    const res = await fetch(`${url}?name=${domain}&type=A`, {
+      headers: { accept: "application/dns-json" },
+      signal: controller.signal
+    });
 
     clearTimeout(timeout);
+    if (!res.ok) return { success: false, latency: null, provider, domain, method: "server" };
 
-    if (!response.ok) {
-      return {
-        success: false,
-        latency: null,
-        provider,
-        domain,
-        method: "server"
-      };
-    }
-
-    await response.json();
-
-    const latency = Date.now() - start;
+    await res.json();
 
     return {
       success: true,
-      latency,
+      latency: Date.now() - start,
       provider,
       domain,
       method: "server"
     };
 
-  } catch (err: any) {
-    return {
-      success: false,
-      latency: null,
-      provider,
-      domain,
-      method: "server",
-      error: err.name === 'AbortError' ? 'Timeout' : (err.message || 'Unknown error')
-    };
+  } catch {
+    return { success: false, latency: null, provider, domain, method: "server" };
   }
 }
