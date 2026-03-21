@@ -342,20 +342,24 @@ async function resolveDNS(
         body: JSON.stringify({
           domain,
           provider: provider.name,
-          customIp: provider.customIp,
         }),
       }
     );
 
     const data = await res.json();
 
-    if (data.success) {
-      return {
-        ...data,
-        provider: provider.name,
-        fallbackUsed: false,
-        verified: true,
-      };
+    if (data.results && data.results.length > 0) {
+      const result = data.results[0];
+      if (result.success) {
+        return {
+          latency: result.latency,
+          success: true,
+          verified: true,
+          method: "server",
+          fallbackUsed: false,
+          provider: provider.name,
+        };
+      }
     }
   } catch (e) {
     // Ignore server error, fallback to client
@@ -369,15 +373,13 @@ export async function measureDoHBatch(
   retries = 3
 ): Promise<Record<string, BenchmarkResult>> {
   const results: Record<string, BenchmarkResult> = {};
-  const allQueries: { domain: string; provider: string; customIp?: string }[] =
-    [];
+  const allQueries: { domain: string; provider: string }[] = [];
 
   for (let i = 0; i < retries; i++) {
     for (const domain of domains) {
       allQueries.push({
         domain,
         provider: provider.name,
-        customIp: provider.customIp,
       });
     }
   }
@@ -386,8 +388,6 @@ export async function measureDoHBatch(
     const url = new URL("/api/dns-query", window.location.origin);
     const start = performance.now();
 
-    // We can't easily rely on abort controller for a batch since the server execution might be longer.
-    // Instead we do normal fetch but no Promise.race. We just wait for server.
     const response = await fetch(url.toString(), {
       method: "POST",
       headers: {
@@ -442,7 +442,6 @@ export async function measureDoHBatch(
     // Fallback if batch server request fails
   }
 
-  // For any domains that failed or weren't returned by batch, fallback to individual resolveDNS
   const missingDomains = domains.filter(d => !results[d]);
   for (const domain of missingDomains) {
     try {

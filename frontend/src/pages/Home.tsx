@@ -44,6 +44,9 @@ import {
   Activity,
   Settings,
   Save,
+  Server,
+  Clock,
+  Trash2,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -265,30 +268,33 @@ export default function Home() {
                   const result = await measureDoH(provider, domain);
                   results.push({
                     user_id: user.id,
+                    monitor_id: monitor.id,
                     domain,
                     provider: provider.name,
-                    latency_ms: result.avgLatency,
+                    latency_ms:
+                      result.successRate > 0 ? result.avgLatency : null,
                     success: result.successRate > 0,
-
                     method: result.method,
-                    fallback_used: result.fallbackUsed,
+                    error: null,
+                    tested_at: new Date().toISOString(),
                   });
                 } catch (e) {
                   results.push({
                     user_id: user.id,
+                    monitor_id: monitor.id,
                     domain,
                     provider: provider.name,
-                    latency_ms: 0,
+                    latency_ms: null,
                     success: false,
-
                     method: "failed",
-                    fallback_used: true,
+                    error: e instanceof Error ? e.message : String(e),
+                    tested_at: new Date().toISOString(),
                   });
                 }
               }
             }
             if (results.length > 0) {
-              await supabase.from("dns_queries").insert(results);
+              await supabase.from("monitor_results").insert(results);
             }
 
             setLastChecked(prev => ({
@@ -686,15 +692,16 @@ export default function Home() {
           }
         }
 
-        const benchmarkResults = allQueries
-          .filter(q => q.success)
-          .map(q => ({
-            user_id: q.user_id,
-            domain: q.domain,
-            provider: q.provider,
-            latency_ms: q.latency_ms,
-            tested_at: q.tested_at,
-          }));
+        const benchmarkResults = allQueries.map(q => ({
+          user_id: q.user_id,
+          domain: q.domain,
+          provider: q.provider,
+          latency_ms: q.latency_ms,
+          tested_at: q.tested_at,
+          success: q.success,
+          error: q.error || null,
+          method: q.method || "client",
+        }));
 
         if (benchmarkResults.length > 0) {
           console.log("Inserting benchmark results:", benchmarkResults);
@@ -1164,111 +1171,49 @@ cloudflare.com"
                     {monitors.length > 0 ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                         {monitors.map(monitor => (
-                          <Card key={monitor.id} className="flex flex-col">
-                            <CardHeader className="pb-3 border-b dark:border-slate-800">
-                              <div className="flex justify-between items-start mb-1">
-                                <div className="flex items-center gap-2">
-                                  <span
-                                    className={`w-2 h-2 rounded-full ${monitor.is_active ? "bg-green-500 animate-pulse" : "bg-slate-300 dark:bg-slate-700"}`}
-                                  ></span>
-                                  <span className="font-semibold text-sm">
-                                    {monitor.is_active ? "Running" : "Stopped"}
-                                  </span>
-                                </div>
-                                <span className="text-xs text-slate-400 font-mono bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
-                                  #{monitor.id.split("-")[0]}
-                                </span>
-                              </div>
-                              <CardDescription>
-                                Every{" "}
-                                {monitor.interval_seconds < 60
-                                  ? `${monitor.interval_seconds}s`
-                                  : `${monitor.interval_seconds / 60}m`}
-                              </CardDescription>
-                            </CardHeader>
-                            <CardContent className="pt-4 flex-1 flex flex-col justify-between">
-                              <div className="space-y-4 mb-4">
-                                <div>
-                                  <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                                    Domains
+                          <Card key={monitor.id} className="bg-card">
+                            <CardContent className="pt-6">
+                              <div className="flex items-start justify-between">
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <Globe className="w-4 h-4 text-muted-foreground" />
+                                    <span className="font-medium">
+                                      {monitor.domains.join(", ")}
+                                    </span>
                                   </div>
-                                  <div
-                                    className="text-sm font-mono break-all line-clamp-2"
-                                    title={(Array.isArray(monitor.domains)
-                                      ? monitor.domains
-                                      : []
-                                    ).join(", ")}
-                                  >
-                                    {(Array.isArray(monitor.domains)
-                                      ? monitor.domains
-                                      : []
-                                    ).join(", ")}
+                                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                    <Server className="w-4 h-4" />
+                                    <span>{monitor.providers.join(", ")}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                    <Clock className="w-4 h-4" />
+                                    <span>
+                                      Runs every {monitor.interval_seconds / 60}{" "}
+                                      minutes
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                    <History className="w-4 h-4" />
+                                    <span>
+                                      Last run:{" "}
+                                      {lastChecked[monitor.id] ||
+                                        (monitor.last_run_at
+                                          ? new Date(
+                                              monitor.last_run_at
+                                            ).toLocaleTimeString()
+                                          : "Never")}
+                                    </span>
                                   </div>
                                 </div>
-                                <div>
-                                  <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                                    Providers
-                                  </div>
-                                  <div
-                                    className="text-sm"
-                                    title={(Array.isArray(monitor.providers)
-                                      ? monitor.providers
-                                      : []
-                                    ).join(", ")}
-                                  >
-                                    {(Array.isArray(monitor.providers)
-                                      ? monitor.providers
-                                      : []
-                                    ).join(", ")}
-                                  </div>
-                                </div>
-                                <div>
-                                  <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                                    Last Checked
-                                  </div>
-                                  <div className="text-sm text-slate-600 dark:text-slate-400">
-                                    {lastChecked[monitor.id] || "Never"}
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="flex gap-2 pt-3 border-t dark:border-slate-800 mt-auto">
                                 <Button
-                                  variant={
-                                    monitor.is_active ? "outline" : "default"
-                                  }
-                                  size="sm"
-                                  onClick={() => toggleMonitor(monitor)}
-                                  className="flex-1"
-                                >
-                                  {monitor.is_active ? "Stop" : "Start"}
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => {
-                                    setMonitorDomains(
-                                      (Array.isArray(monitor.domains)
-                                        ? monitor.domains
-                                        : []
-                                      ).join("\n")
-                                    );
-                                    setMonitorInterval(
-                                      monitor.interval_seconds
-                                    );
-                                    setEditingMonitorId(monitor.id);
-                                  }}
-                                  className="flex-1"
-                                >
-                                  Edit
-                                </Button>
-                                <Button
-                                  variant="destructive"
-                                  size="sm"
+                                  variant="ghost"
+                                  size="icon"
                                   onClick={() =>
                                     handleDeleteMonitor(monitor.id)
                                   }
+                                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
                                 >
-                                  Delete
+                                  <Trash2 className="w-4 h-4" />
                                 </Button>
                               </div>
                             </CardContent>
@@ -1501,7 +1446,9 @@ cloudflare.com"
                                 className="border-b dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/50"
                               >
                                 <td className="py-3 px-4">
-                                  {new Date(record.tested_at || record.timestamp).toLocaleString()}
+                                  {new Date(
+                                    record.tested_at || record.timestamp
+                                  ).toLocaleString()}
                                 </td>
                                 <td className="py-3 px-4 font-mono">
                                   {record.domain}
