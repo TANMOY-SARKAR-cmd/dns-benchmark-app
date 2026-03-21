@@ -208,6 +208,16 @@ async function binaryPostQuery(
   return { latency: 0, success: false, verified: false };
 }
 
+
+export type DnsResult = {
+  domain: string;
+  provider: string;
+  latency: number | null;
+  success: boolean;
+  method: "server-udp" | "server-doh" | "fallback" | "failed";
+  error: string | null;
+};
+
 export type ResolveDNSResult = {
   latency: number | null;
   success: boolean;
@@ -291,9 +301,11 @@ export async function measureClientDoH(
   const promises = Array.from({ length: retries }).map(async () => {
     const res = await resolveClientDNS(domain, provider);
 
-    if (res.success && res.latency !== null) {
+    if (res.success) {
       successCount++;
-      latencies.push(res.latency);
+      if (res.latency !== null) {
+        latencies.push(res.latency);
+      }
       if (!res.verified) {
         verified = false;
       }
@@ -435,9 +447,11 @@ export async function measureDoHBatch(
           };
         }
 
-        for (const res of data.results) {
-          if (res.success === true && res.domain && typeof res.latency === "number") {
-            domainResults[res.domain].latencies.push(res.latency);
+        for (const res of (data.results as DnsResult[])) {
+          if (res.success === true && res.domain) {
+            if (typeof res.latency === "number") {
+              domainResults[res.domain].latencies.push(res.latency);
+            }
             domainResults[res.domain].successCount++;
             if (!domainResults[res.domain].method)
               domainResults[res.domain].method = res.method;
@@ -457,7 +471,7 @@ export async function measureDoHBatch(
               successRate: Math.round((stats.successCount / retries) * 100),
               queriesPerSec: Math.round(stats.successCount / totalTimeSec),
               verified: true,
-              method: (stats.method === "server-udp" ? "server-udp" : "server-doh") as any,
+              method: stats.method as any,
             };
           }
         }
@@ -519,9 +533,11 @@ export async function measureDoH(
   const promises = Array.from({ length: retries }).map(async () => {
     const res = await resolveDNS(domain, provider);
 
-    if (res.success && res.latency !== null) {
+    if (res.success) {
       successCount++;
-      latencies.push(res.latency);
+      if (res.latency !== null) {
+        latencies.push(res.latency);
+      }
       if (!res.verified) {
         verified = false;
       }

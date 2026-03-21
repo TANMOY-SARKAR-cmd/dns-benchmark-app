@@ -683,8 +683,7 @@ export default function Home() {
 
           if (
             serverResult &&
-            serverResult.success &&
-            typeof serverResult.latency === "number"
+            serverResult.success === true
           ) {
             // Server succeeded
             results[domain][provider.name] = {
@@ -694,7 +693,7 @@ export default function Home() {
               successRate: 100,
               queriesPerSec: 1, // Placeholder
               verified: true,
-              method: "server-udp", // Just a placeholder until loop finishes
+              method: serverResult.method, // Use the real method from the server
             };
           } else {
             failedProviders.push(provider);
@@ -750,8 +749,7 @@ export default function Home() {
 
           const serverSuccess =
             serverResult &&
-            serverResult.success &&
-            typeof serverResult.latency === "number";
+            serverResult.success === true;
 
           const clientSuccess =
             clientResult &&
