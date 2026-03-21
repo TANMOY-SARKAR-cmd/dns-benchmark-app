@@ -26,15 +26,19 @@ export async function runMonitorBenchmark(domains: string[], userId: string) {
                   latency_ms: result.avgLatency,
                   success: true,
                   tested_at: new Date().toISOString(),
+                  method: result.method === "server" ? "server" : "fallback",
+                  fallback_used: result.fallbackUsed,
                 });
               } else {
                 allQueries.push({
                   user_id: userId,
                   domain,
                   provider: provider.name,
-                  latency_ms: 0,
+                  latency_ms: null,
                   success: false,
                   tested_at: new Date().toISOString(),
+                  method: "failed",
+                  fallback_used: true,
                 });
               }
             } catch (error) {
@@ -42,9 +46,11 @@ export async function runMonitorBenchmark(domains: string[], userId: string) {
                 user_id: userId,
                 domain,
                 provider: provider.name,
-                latency_ms: 0,
-                success: false,
-                tested_at: new Date().toISOString(),
+                latency_ms: null,
+                  success: false,
+                  tested_at: new Date().toISOString(),
+                  method: "failed",
+                  fallback_used: true,
               });
             }
           })
@@ -65,13 +71,15 @@ export async function runMonitorBenchmark(domains: string[], userId: string) {
     }
 
     const benchmarkResults = allQueries
-      .filter(q => q.success)
       .map(q => ({
         user_id: q.user_id,
         domain: q.domain,
         provider: q.provider,
         latency_ms: q.latency_ms,
         tested_at: q.tested_at,
+
+        success: q.success,
+        method: q.method || "client",
       }));
 
     if (benchmarkResults.length > 0) {
