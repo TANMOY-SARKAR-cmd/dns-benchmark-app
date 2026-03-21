@@ -1,4 +1,4 @@
-import { promises as dns } from "node:dns";
+import dns from "node:dns/promises";
 
 const PROVIDER_IPS: Record<string, string> = {
   Google: "8.8.8.8",
@@ -42,9 +42,9 @@ export default async function handler(req: Request) {
     }
 
     // Handle single query
-    const { domain, provider, customIp } = body;
+    const { domain, provider, customDns, customIp } = body;
 
-    if (!domain || !provider) {
+    if (!domain || (!provider && !customDns && !customIp)) {
       return new Response(
         JSON.stringify({ error: "Missing domain or provider" }),
         {
@@ -54,7 +54,7 @@ export default async function handler(req: Request) {
       );
     }
 
-    const result = await resolveDnsQuery(domain, provider, customIp);
+    const result = await resolveDnsQuery(domain, provider, customDns || customIp);
 
     return new Response(JSON.stringify(result), {
       status: 200,
@@ -68,10 +68,11 @@ export default async function handler(req: Request) {
       JSON.stringify({
         success: false,
         latency: null,
+        method: "server",
         error: error.message || "Internal server error",
       }),
       {
-        status: 500,
+        status: 200, // Returning 200 with success: false as requested
         headers: { "Content-Type": "application/json" },
       }
     );
@@ -84,7 +85,7 @@ async function resolveDnsQuery(
   customIp?: string
 ) {
   try {
-    const ip = customIp || PROVIDER_IPS[provider];
+    const ip = customIp || PROVIDER_IPS[provider] || PROVIDER_IPS[provider?.toLowerCase()] || PROVIDER_IPS[provider?.charAt(0).toUpperCase() + provider?.slice(1).toLowerCase()];
 
     if (!ip) {
       return {
@@ -93,23 +94,23 @@ async function resolveDnsQuery(
         provider,
         domain,
         method: "server",
-        error: "Invalid provider and no custom IP supplied",
+        error: "Invalid provider",
       };
     }
 
     const resolver = new dns.Resolver();
     resolver.setServers([ip]);
 
-    const start = performance.now();
+    const start = Date.now();
 
-    const resolvePromise = resolver.resolve4(domain);
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error("Timeout")), 2000);
-    });
+    await Promise.race([
+      resolver.resolve4(domain),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout")), 2000)
+      ),
+    ]);
 
-    await Promise.race([resolvePromise, timeoutPromise]);
-
-    const latency = performance.now() - start;
+    const latency = Date.now() - start;
 
     return {
       success: true,
