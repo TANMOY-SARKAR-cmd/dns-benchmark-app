@@ -1,13 +1,3 @@
-import dns from "node:dns/promises";
-
-const PROVIDER_IPS: Record<string, string> = {
-  Google: "8.8.8.8",
-  Cloudflare: "1.1.1.1",
-  Quad9: "9.9.9.9",
-  AdGuard: "94.140.14.14",
-  OpenDNS: "208.67.222.222",
-};
-
 export default async function handler(req: Request) {
   // Only allow POST
   if (req.method !== "POST") {
@@ -84,31 +74,64 @@ async function resolveDnsQuery(
   provider: string,
   customIp?: string
 ) {
-  try {
-    const ip = customIp || PROVIDER_IPS[provider] || PROVIDER_IPS[provider?.toLowerCase()] || PROVIDER_IPS[provider?.charAt(0).toUpperCase() + provider?.slice(1).toLowerCase()];
+  const DOH_ENDPOINTS: Record<string, string> = {
+    google: "https://dns.google/resolve",
+    cloudflare: "https://cloudflare-dns.com/dns-query",
+    quad9: "https://dns.quad9.net/dns-query",
+    adguard: "https://dns.adguard-dns.com/dns-query",
+    opendns: "https://doh.opendns.com/dns-query"
+  };
 
-    if (!ip) {
+  try {
+    let url = "";
+    if (provider) {
+        url = DOH_ENDPOINTS[provider.toLowerCase()];
+    }
+
+    // If custom DNS/IP is provided and no matching DoH endpoint exists, fail for now since the user only wanted DOH.
+    // Or we can try to form a URL if customIp looks like a URL.
+    if (!url && customIp && customIp.startsWith('http')) {
+        url = customIp;
+    }
+
+    if (!url) {
       return {
         success: false,
         latency: null,
         provider,
         domain,
         method: "server",
-        error: "Invalid provider",
+        error: "Invalid provider or unsupported custom IP/DNS via DoH",
       };
     }
 
-    const resolver = new dns.Resolver();
-    resolver.setServers([ip]);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2500);
 
     const start = Date.now();
 
-    await Promise.race([
-      resolver.resolve4(domain),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout")), 2000)
-      ),
-    ]);
+    const response = await fetch(
+      `${url}?name=${domain}&type=A`,
+      {
+        method: "GET",
+        headers: { accept: "application/dns-json" },
+        signal: controller.signal
+      }
+    );
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      return {
+        success: false,
+        latency: null,
+        provider,
+        domain,
+        method: "server"
+      };
+    }
+
+    await response.json();
 
     const latency = Date.now() - start;
 
@@ -117,16 +140,17 @@ async function resolveDnsQuery(
       latency,
       provider,
       domain,
-      method: "server",
+      method: "server"
     };
-  } catch (error: any) {
+
+  } catch (err: any) {
     return {
       success: false,
       latency: null,
       provider,
       domain,
       method: "server",
-      error: error.message || "Resolution failed",
+      error: err.name === 'AbortError' ? 'Timeout' : (err.message || 'Unknown error')
     };
   }
 }
