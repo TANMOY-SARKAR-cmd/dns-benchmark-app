@@ -1,6 +1,6 @@
-const fs = require('fs');
-const filePath = 'frontend/src/pages/Home.tsx';
-let content = fs.readFileSync(filePath, 'utf8');
+const fs = require("fs");
+const filePath = "frontend/src/pages/Home.tsx";
+let content = fs.readFileSync(filePath, "utf8");
 
 const regex = /\{Math\.round\(item\.global_avg_ms\)\}/;
 

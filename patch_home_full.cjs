@@ -1,9 +1,10 @@
-const fs = require('fs');
+const fs = require("fs");
 
-const filePath = 'frontend/src/pages/Home.tsx';
-let content = fs.readFileSync(filePath, 'utf8');
+const filePath = "frontend/src/pages/Home.tsx";
+let content = fs.readFileSync(filePath, "utf8");
 
-const regex = /\/\/ Process one domain at a time.*setProgress\(Math\.round\(\(completed \/ total\) \* 100\)\);\s*\}\s*\}/s;
+const regex =
+  /\/\/ Process one domain at a time.*setProgress\(Math\.round\(\(completed \/ total\) \* 100\)\);\s*\}\s*\}/s;
 
 const newHandleTest = `      // Process one domain at a time, sending all providers in a single batch
       for (const domain of domains) {
@@ -96,4 +97,4 @@ const newHandleTest = `      // Process one domain at a time, sending all provid
 
 content = content.replace(regex, newHandleTest);
 fs.writeFileSync(filePath, content);
-console.log('Successfully patched Home.tsx full batching');
+console.log("Successfully patched Home.tsx full batching");

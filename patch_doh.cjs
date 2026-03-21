@@ -1,6 +1,6 @@
-const fs = require('fs');
+const fs = require("fs");
 
-const code = fs.readFileSync('frontend/src/lib/doh.ts', 'utf8');
+const code = fs.readFileSync("frontend/src/lib/doh.ts", "utf8");
 
 const updatedType = code.replace(
   /method: "server" \| "client" \| "failed" \| "mixed";/,
@@ -138,10 +138,13 @@ if (startIdx === -1) {
   process.exit(1);
 }
 
-const withNewFunctions = updatedType.substring(0, startIdx) + targetReplacement + updatedType.substring(startIdx + targetStart.length);
+const withNewFunctions =
+  updatedType.substring(0, startIdx) +
+  targetReplacement +
+  updatedType.substring(startIdx + targetStart.length);
 
 const fullReplacement = withNewFunctions.replace(
-`  // Fallback to client DoH
+  `  // Fallback to client DoH
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 2000);
 
@@ -195,8 +198,9 @@ const fullReplacement = withNewFunctions.replace(
     method: "failed",
     fallbackUsed: true,
     provider: provider.name,
-  };`, `  return resolveClientDNS(domain, provider);`);
+  };`,
+  `  return resolveClientDNS(domain, provider);`
+);
 
-
-fs.writeFileSync('frontend/src/lib/doh.ts', fullReplacement);
+fs.writeFileSync("frontend/src/lib/doh.ts", fullReplacement);
 console.log("Patched doh.ts successfully");

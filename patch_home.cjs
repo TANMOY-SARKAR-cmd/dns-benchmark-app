@@ -1,6 +1,6 @@
-const fs = require('fs');
+const fs = require("fs");
 
-const code = fs.readFileSync('frontend/src/pages/Home.tsx', 'utf8');
+const code = fs.readFileSync("frontend/src/pages/Home.tsx", "utf8");
 
 // Add measureClientDoH to import
 let newCode = code.replace(
@@ -227,5 +227,5 @@ newCode = newCode.replace(
   `                                    <span className={\`text-[10px] px-1.5 py-0.5 rounded font-mono font-medium \${record.method_used === "server" ? "bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400" : (record.method_used === "client" || record.method_used === "client-fallback") ? "bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400" : "bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-400"}\`}>`
 );
 
-fs.writeFileSync('frontend/src/pages/Home.tsx', newCode);
+fs.writeFileSync("frontend/src/pages/Home.tsx", newCode);
 console.log("Patched Home.tsx successfully");
