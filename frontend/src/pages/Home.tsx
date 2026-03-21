@@ -902,74 +902,84 @@ cloudflare.com"
                     </form>
 
                     {monitors.length > 0 ? (
-                      <div className="space-y-3">
-                        <h3 className="font-semibold text-sm text-slate-500 uppercase tracking-wider">
-                          Active Monitors
-                        </h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                         {monitors.map(monitor => (
-                          <div
-                            key={monitor.id}
-                            className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg gap-4"
-                          >
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span
-                                  className={`w-2 h-2 rounded-full ${monitor.is_active ? "bg-green-500 animate-pulse" : "bg-slate-300 dark:bg-slate-700"}`}
-                                ></span>
-                                <span className="font-medium">
-                                  {monitor.is_active ? "Running" : "Stopped"} (Every{" "}
-                                  {monitor.interval_seconds < 60
-                                    ? `${monitor.interval_seconds}s`
-                                    : `${monitor.interval_seconds / 60}m`})
-                                </span>
-                                <span className="text-xs text-slate-400 font-mono">
-                                  ID: {monitor.id.split("-")[0]}
+                          <Card key={monitor.id} className="flex flex-col">
+                            <CardHeader className="pb-3 border-b dark:border-slate-800">
+                              <div className="flex justify-between items-start mb-1">
+                                <div className="flex items-center gap-2">
+                                  <span className={`w-2 h-2 rounded-full ${monitor.is_active ? "bg-green-500 animate-pulse" : "bg-slate-300 dark:bg-slate-700"}`}></span>
+                                  <span className="font-semibold text-sm">
+                                    {monitor.is_active ? "Running" : "Stopped"}
+                                  </span>
+                                </div>
+                                <span className="text-xs text-slate-400 font-mono bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
+                                  #{monitor.id.split("-")[0]}
                                 </span>
                               </div>
-                              <div className="text-sm text-slate-500 font-mono line-clamp-1">
-                                {monitor.domains.join(", ")}
+                              <CardDescription>
+                                Every {monitor.interval_seconds < 60 ? `${monitor.interval_seconds}s` : `${monitor.interval_seconds / 60}m`}
+                              </CardDescription>
+                            </CardHeader>
+                            <CardContent className="pt-4 flex-1 flex flex-col justify-between">
+                              <div className="space-y-4 mb-4">
+                                <div>
+                                  <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Domains</div>
+                                  <div className="text-sm font-mono break-all line-clamp-2" title={monitor.domains.join(", ")}>
+                                    {monitor.domains.join(", ")}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Providers</div>
+                                  <div className="text-sm" title={monitor.providers.join(", ")}>
+                                    {monitor.providers.join(", ")}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Last Checked</div>
+                                  <div className="text-sm text-slate-600 dark:text-slate-400">
+                                    {lastChecked[monitor.id] || "Never"}
+                                  </div>
+                                </div>
                               </div>
-                              <div className="text-xs text-slate-500 mt-1">
-                                Last checked: {lastChecked[monitor.id] || "Never"}
+                              <div className="flex gap-2 pt-3 border-t dark:border-slate-800 mt-auto">
+                                <Button
+                                  variant={monitor.is_active ? "outline" : "default"}
+                                  size="sm"
+                                  onClick={() => toggleMonitor(monitor)}
+                                  className="flex-1"
+                                >
+                                  {monitor.is_active ? "Stop" : "Start"}
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setMonitorDomains(monitor.domains.join("\n"));
+                                    setMonitorInterval(monitor.interval_seconds);
+                                    setEditingMonitorId(monitor.id);
+                                  }}
+                                  className="flex-1"
+                                >
+                                  Edit
+                                </Button>
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => handleDeleteMonitor(monitor.id)}
+                                >
+                                  Delete
+                                </Button>
                               </div>
-                            </div>
-                            <div className="flex items-center gap-2 w-full sm:w-auto">
-                              <Button
-                                variant={
-                                  monitor.is_active ? "outline" : "default"
-                                }
-                                size="sm"
-                                onClick={() => toggleMonitor(monitor)}
-                                className="flex-1 sm:flex-none"
-                              >
-                                {monitor.is_active ? "Stop" : "Start"}
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  setMonitorDomains(monitor.domains.join("\n"));
-                                  setMonitorInterval(monitor.interval_seconds);
-                                  setEditingMonitorId(monitor.id);
-                                }}
-                                className="flex-1 sm:flex-none"
-                              >
-                                Edit
-                              </Button>
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                onClick={() => handleDeleteMonitor(monitor.id)}
-                              >
-                                Delete
-                              </Button>
-                            </div>
-                          </div>
+                            </CardContent>
+                          </Card>
                         ))}
                       </div>
                     ) : (
-                      <div className="text-center py-6 text-slate-500">
-                        No monitors set up yet.
+                                            <div className="flex flex-col items-center justify-center p-8 text-center bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-dashed border-slate-200 dark:border-slate-800">
+                        <Activity className="w-10 h-10 text-slate-300 dark:text-slate-600 mb-3" />
+                        <h4 className="text-sm font-medium text-slate-900 dark:text-slate-200">No active monitors</h4>
+                        <p className="text-sm text-slate-500 mt-1 max-w-sm">Set up continuous monitoring to automatically track domain resolution performance over time.</p>
                       </div>
                     )}
                   </div>
