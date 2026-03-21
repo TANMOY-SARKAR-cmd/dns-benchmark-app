@@ -334,16 +334,28 @@ async function resolveDNS(
 ): Promise<ResolveDNSResult> {
   // Try server first
   try {
-    const res = await fetch(new URL("/api/dns-query", window.location.origin).toString(), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ domain, provider: provider.name, customIp: provider.customIp })
-    });
+    const res = await fetch(
+      new URL("/api/dns-query", window.location.origin).toString(),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          domain,
+          provider: provider.name,
+          customIp: provider.customIp,
+        }),
+      }
+    );
 
     const data = await res.json();
 
     if (data.success) {
-      return { ...data, provider: provider.name, fallbackUsed: false, verified: true };
+      return {
+        ...data,
+        provider: provider.name,
+        fallbackUsed: false,
+        verified: true,
+      };
     }
   } catch (e) {
     // Ignore server error, fallback to client

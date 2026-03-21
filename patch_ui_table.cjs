@@ -1,6 +1,6 @@
-const fs = require('fs');
-const filePath = 'frontend/src/pages/Home.tsx';
-let content = fs.readFileSync(filePath, 'utf8');
+const fs = require("fs");
+const filePath = "frontend/src/pages/Home.tsx";
+let content = fs.readFileSync(filePath, "utf8");
 
 const oldTable = `<table className="w-full text-sm text-left">
                         <thead>
@@ -145,9 +145,10 @@ if (content.includes(oldTable)) {
   console.log("Successfully replaced the Detailed Results table.");
 } else {
   // If formatting changed, let's try a regex
-  const regex = /<table className="w-full text-sm text-left">.*?(?=<\/div>\s*<\/CardContent>)/s;
+  const regex =
+    /<table className="w-full text-sm text-left">.*?(?=<\/div>\s*<\/CardContent>)/s;
   if (regex.test(content)) {
-    content = content.replace(regex, newTable + '\n                      ');
+    content = content.replace(regex, newTable + "\n                      ");
     fs.writeFileSync(filePath, content);
     console.log("Successfully replaced using regex.");
   } else {
