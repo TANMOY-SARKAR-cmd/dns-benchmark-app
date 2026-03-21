@@ -21,33 +21,21 @@ export async function runMonitorBenchmark(domains: string[], userId: string) {
               let final_success = false;
               let final_method = "failed";
               let final_latency = null;
-              let fallback_used = true;
 
               if (result.successRate > 0) {
                 final_success = true;
-                if (
-                  result.method === "server" ||
-                  (result.method === "mixed" && !result.fallbackUsed)
-                ) {
-                  final_method = "server";
-                  final_latency = result.avgLatency;
-                  fallback_used = false;
-                } else {
-                  final_method = "fallback";
-                  final_latency = result.avgLatency;
-                  fallback_used = true;
-                }
+                final_method = result.method || "fallback";
+                final_latency = result.avgLatency;
               }
 
               allQueries.push({
                 user_id: userId,
                 domain,
                 provider: provider.name,
-                latency_ms: final_latency,
+                latency_ms: final_success ? final_latency : null,
                 success: final_success,
                 tested_at: new Date().toISOString(),
                 method: final_method,
-                fallback_used,
               });
             } catch (error) {
               allQueries.push({
@@ -58,7 +46,6 @@ export async function runMonitorBenchmark(domains: string[], userId: string) {
                 success: false,
                 tested_at: new Date().toISOString(),
                 method: "failed",
-                fallback_used: true,
               });
             }
           })
@@ -86,7 +73,7 @@ export async function runMonitorBenchmark(domains: string[], userId: string) {
       tested_at: q.tested_at,
 
       success: q.success,
-      method: q.method || "client",
+      method: q.method || "failed",
     }));
 
     if (benchmarkResults.length > 0) {

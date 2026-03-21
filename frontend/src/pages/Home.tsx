@@ -694,8 +694,7 @@ export default function Home() {
               successRate: 100,
               queriesPerSec: 1, // Placeholder
               verified: true,
-              method: "server",
-              fallbackUsed: false,
+              method: "server-udp", // Just a placeholder until loop finishes
             };
           } else {
             failedProviders.push(provider);
@@ -748,7 +747,6 @@ export default function Home() {
           let final_success = false;
           let final_method = "failed";
           let final_latency = null;
-          let fallback_used = true;
 
           const serverSuccess =
             serverResult &&
@@ -762,25 +760,22 @@ export default function Home() {
 
           if (serverSuccess) {
             final_success = true;
-            final_method = "server";
+            final_method = serverResult.method;
             final_latency = serverResult.latency;
-            fallback_used = false;
           } else if (clientSuccess) {
             final_success = true;
-            final_method = "fallback";
+            final_method = clientResult.method || "fallback";
             final_latency = clientResult.avgLatency;
-            fallback_used = true;
           }
 
           allQueries.push({
             user_id: userId,
             domain,
             provider: provider.name,
-            latency_ms: final_latency,
+            latency_ms: final_success ? final_latency : null,
             success: final_success,
             tested_at: new Date().toISOString(),
             method: final_method,
-            fallback_used,
           });
 
           completed++;
@@ -1143,7 +1138,7 @@ export default function Home() {
                                   badgeText = "Failed";
                                 } else if (
                                   result &&
-                                  (result.method === "server" ||
+                                  (
                                     result.method === "server-udp" ||
                                     result.method === "server-doh")
                                 ) {
@@ -1152,9 +1147,7 @@ export default function Home() {
                                   badgeText = "Server";
                                 } else if (
                                   result &&
-                                  (result.method === "client" ||
-                                    result.method === "client-fallback" ||
-                                    result.method === "mixed")
+                                  (result.method === "fallback")
                                 ) {
                                   badgeColor =
                                     "bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400";
@@ -1412,15 +1405,28 @@ cloudflare.com"
                             <span className="font-mono">{log.domain}</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            {log.method_used === "client" ? (
+                            {log.method === "fallback" ||
+                            log.method_used === "client" ? (
                               <span className="text-[10px] bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-400 px-1.5 py-0.5 rounded font-mono font-medium">
-                                client fallback
+                                fallback
                               </span>
-                            ) : log.method_used === "server" ? (
+                            ) : log.method === "server-udp" ? (
+                              <span className="text-[10px] bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400 px-1.5 py-0.5 rounded font-mono font-medium">
+                                server-udp
+                              </span>
+                            ) : log.method === "server-doh" ? (
                               <span className="text-[10px] bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400 px-1.5 py-0.5 rounded font-mono font-medium">
-                                server
+                                server-doh
                               </span>
-                            ) : null}
+                            ) : log.method === "failed" ? (
+                              <span className="text-[10px] bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-400 px-1.5 py-0.5 rounded font-mono font-medium">
+                                failed
+                              </span>
+                            ) : (
+                              <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-400 px-1.5 py-0.5 rounded font-mono font-medium">
+                                {log.method || log.method_used}
+                              </span>
+                            )}
                             <div
                               className={`font-semibold flex items-center gap-1 ${log.status === "success" || log.success ? "text-green-600" : "text-red-600"}`}
                             >
