@@ -24,7 +24,7 @@ export async function logDnsQuery(query: {
       error: query.error,
       cached: query.cached,
 
-      success: query.status === "success"
+      success: query.status === "success",
     });
 
     if (error) {
