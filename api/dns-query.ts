@@ -39,7 +39,7 @@ interface DnsResult {
   provider: string;
   latency: number | null;
   success: boolean;
-  method: "server";
+  method: "server" | "client" | "fallback";
   error: string | null;
 }
 

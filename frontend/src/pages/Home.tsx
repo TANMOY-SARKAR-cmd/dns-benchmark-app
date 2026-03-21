@@ -266,22 +266,22 @@ export default function Home() {
                   results.push({
                     user_id: user.id,
                     domain,
-                    upstream_provider: provider.name,
+                    provider: provider.name,
                     latency_ms: result.avgLatency,
                     success: result.successRate > 0,
-                    status: result.successRate > 0 ? "success" : "failed",
-                    method_used: result.method,
+
+                    method: result.method,
                     fallback_used: result.fallbackUsed,
                   });
                 } catch (e) {
                   results.push({
                     user_id: user.id,
                     domain,
-                    upstream_provider: provider.name,
+                    provider: provider.name,
                     latency_ms: 0,
                     success: false,
-                    status: "failed",
-                    method_used: "failed",
+
+                    method: "failed",
                     fallback_used: true,
                   });
                 }
@@ -644,22 +644,22 @@ export default function Home() {
             allQueries.push({
               user_id: userId,
               domain,
-              upstream_provider: provider.name,
+              provider: provider.name,
               latency_ms: finalResult.avgLatency,
-              status: "success",
-              created_at: new Date().toISOString(),
-              method_used: finalResult.method,
+              success: true,
+              tested_at: new Date().toISOString(),
+              method: finalResult.method,
               fallback_used: finalResult.fallbackUsed,
             });
           } else {
             allQueries.push({
               user_id: userId,
               domain,
-              upstream_provider: provider.name,
+              provider: provider.name,
               latency_ms: 0,
-              status: "failed",
-              created_at: new Date().toISOString(),
-              method_used: "failed",
+              success: false,
+              tested_at: new Date().toISOString(),
+              method: "failed",
               fallback_used: true,
             });
           }
@@ -687,13 +687,13 @@ export default function Home() {
         }
 
         const benchmarkResults = allQueries
-          .filter(q => q.status === "success")
+          .filter(q => q.success)
           .map(q => ({
             user_id: q.user_id,
             domain: q.domain,
-            provider: q.upstream_provider,
+            provider: q.provider,
             latency_ms: q.latency_ms,
-            tested_at: q.created_at,
+            tested_at: q.tested_at,
           }));
 
         if (benchmarkResults.length > 0) {
@@ -1330,7 +1330,7 @@ cloudflare.com"
                 ) : (
                   <div className="space-y-2">
                     {liveLogs.map((log, i) => {
-                      const rawTimestamp = log.timestamp || log.created_at;
+                      const rawTimestamp = log.timestamp || log.tested_at;
                       const date = rawTimestamp ? new Date(rawTimestamp) : null;
                       const timeLabel =
                         date && !isNaN(date.getTime())
@@ -1420,7 +1420,7 @@ cloudflare.com"
                           data={Object.values(
                             history.reduce(
                               (acc, curr) => {
-                                const time = curr.tested_at;
+                                const time = curr.tested_at || curr.timestamp;
                                 if (!acc[time]) acc[time] = { tested_at: time };
                                 acc[time][curr.provider] = curr.latency_ms;
                                 return acc;
@@ -1501,7 +1501,7 @@ cloudflare.com"
                                 className="border-b dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/50"
                               >
                                 <td className="py-3 px-4">
-                                  {new Date(record.tested_at).toLocaleString()}
+                                  {new Date(record.tested_at || record.timestamp).toLocaleString()}
                                 </td>
                                 <td className="py-3 px-4 font-mono">
                                   {record.domain}

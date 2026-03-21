@@ -6,7 +6,9 @@ export async function logDnsQuery(query: {
   recordType?: string;
   clientIp?: string;
   upstreamProvider: string;
-  latencyMs?: number;
+  latencyMs?: number | null;
+  method?: string;
+  error?: string | null;
   cached: boolean;
   status: "success" | "error";
 }) {
@@ -16,10 +18,13 @@ export async function logDnsQuery(query: {
       domain: query.domain,
       record_type: query.recordType,
       client_ip: query.clientIp,
-      upstream_provider: query.upstreamProvider,
+      provider: query.upstreamProvider,
       latency_ms: query.latencyMs,
+      method: query.method,
+      error: query.error,
       cached: query.cached,
-      status: query.status,
+
+      success: query.status === "success"
     });
 
     if (error) {
@@ -35,7 +40,7 @@ export async function getDnsQueryLogs(userId: string, limit: number = 100) {
     .from("dns_queries")
     .select("*")
     .eq("user_id", userId)
-    .order("created_at", { ascending: false })
+    .order("tested_at", { ascending: false })
     .limit(limit);
 
   if (error) {
@@ -48,11 +53,11 @@ export async function getDnsQueryLogs(userId: string, limit: number = 100) {
     id: log.id,
     userId: log.user_id,
     domain: log.domain,
-    provider: log.upstream_provider,
+    provider: log.provider,
     resolutionTime: log.latency_ms,
     ipAddress: log.client_ip,
-    status: log.status,
+    status: log.success ? "success" : "error",
     cachedResult: log.cached ? 1 : 0,
-    createdAt: new Date(log.created_at),
+    createdAt: new Date(log.tested_at),
   }));
 }
