@@ -3,7 +3,6 @@ import dnsPacket from "dns-packet";
 export type DoHProvider = {
   name: string;
   url: string;
-  customIp?: string;
   color: string;
   format: "json" | "binary";
 };
@@ -349,6 +348,8 @@ async function resolveDNS(
   let serverResult: any = null;
 
   try {
+    const isCustom = !DOH_PROVIDERS.some(p => p.name === provider.name);
+
     const res = await fetch(
       new URL("/api/dns-query", window.location.origin).toString(),
       {
@@ -356,7 +357,8 @@ async function resolveDNS(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           domain,
-          provider: provider.name,
+          provider: isCustom ? "custom" : provider.name,
+          customUrl: isCustom ? provider.url : undefined,
         }),
       }
     );
@@ -407,12 +409,15 @@ export async function measureDoHBatch(
   const results: Record<string, BenchmarkResult> = {};
   const allQueries: { domain: string; provider: string }[] = [];
 
+  const isCustom = !DOH_PROVIDERS.some(p => p.name === provider.name);
+
   for (let i = 0; i < retries; i++) {
     for (const domain of domains) {
       allQueries.push({
         domain,
-        provider: provider.name,
-      });
+        provider: isCustom ? "custom" : provider.name,
+        ...(isCustom ? { customUrl: provider.url } : {}),
+      } as any);
     }
   }
 

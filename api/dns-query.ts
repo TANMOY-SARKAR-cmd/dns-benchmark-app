@@ -68,6 +68,7 @@ const REQUEST_TIMEOUT = 2500; // ms — per individual DoH fetch
 interface DnsQuery {
   domain: string;
   provider: string;
+  customUrl?: string;
 }
 
 interface DnsResult {
@@ -83,7 +84,8 @@ interface DnsResult {
 
 async function resolveDnsQuery(
   domain: string,
-  provider: string
+  provider: string,
+  customUrl?: string
 ): Promise<DnsResult> {
   const base: Omit<DnsResult, "success" | "latency" | "error" | "method"> = {
     domain,
@@ -109,7 +111,7 @@ async function resolveDnsQuery(
     }
   }
 
-  const url = DOH_ENDPOINTS[provider]; // already validated upstream
+  const url = provider === "custom" && customUrl ? customUrl : DOH_ENDPOINTS[provider]; // already validated upstream
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
@@ -265,13 +267,30 @@ export async function POST(request: Request) {
         { status: 400, headers: CORS_HEADERS }
       );
     }
-    if (
-      typeof q.provider !== "string" ||
-      !VALID_PROVIDERS.includes(q.provider.toLowerCase())
-    ) {
+    if (typeof q.provider !== "string") {
       return new Response(
         JSON.stringify({
-          error: `queries[${i}].provider must be one of: ${VALID_PROVIDERS.join(", ")}`,
+          error: `queries[${i}].provider must be a string`,
+        }),
+        { status: 400, headers: CORS_HEADERS }
+      );
+    }
+
+    const providerLower = q.provider.toLowerCase();
+
+    if (providerLower !== "custom" && !VALID_PROVIDERS.includes(providerLower)) {
+      return new Response(
+        JSON.stringify({
+          error: `queries[${i}].provider must be "custom" or one of: ${VALID_PROVIDERS.join(", ")}`,
+        }),
+        { status: 400, headers: CORS_HEADERS }
+      );
+    }
+
+    if (providerLower === "custom" && (!q.customUrl || typeof q.customUrl !== "string")) {
+      return new Response(
+        JSON.stringify({
+          error: `queries[${i}].customUrl must be a string when provider is "custom"`,
         }),
         { status: 400, headers: CORS_HEADERS }
       );
@@ -280,7 +299,8 @@ export async function POST(request: Request) {
     // Normalise provider to lowercase so DOH_ENDPOINTS lookup always hits
     queries[i] = {
       domain: q.domain.trim(),
-      provider: q.provider.toLowerCase(),
+      provider: providerLower,
+      customUrl: q.customUrl,
     };
   }
 
@@ -299,7 +319,7 @@ export async function POST(request: Request) {
     const chunk = queries.slice(i, i + CHUNK_SIZE);
 
     const settled = await Promise.allSettled(
-      chunk.map(q => resolveDnsQuery(q.domain, q.provider))
+      chunk.map(q => resolveDnsQuery(q.domain, q.provider, q.customUrl))
     );
 
     for (const outcome of settled) {
