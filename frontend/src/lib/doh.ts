@@ -48,7 +48,14 @@ export type BenchmarkResult = {
   successRate: number;
   queriesPerSec: number;
   verified: boolean;
-  method: "server" | "client" | "client-fallback" | "failed" | "mixed";
+  method:
+    | "server"
+    | "server-udp"
+    | "server-doh"
+    | "client"
+    | "client-fallback"
+    | "failed"
+    | "mixed";
   fallbackUsed: boolean;
 };
 
@@ -209,7 +216,14 @@ export type ResolveDNSResult = {
   latency: number | null;
   success: boolean;
   verified: boolean;
-  method: "server" | "client" | "client-fallback" | "failed" | "mixed";
+  method:
+    | "server"
+    | "server-udp"
+    | "server-doh"
+    | "client"
+    | "client-fallback"
+    | "failed"
+    | "mixed";
   fallbackUsed: boolean;
   provider?: string;
 };
@@ -355,7 +369,12 @@ async function resolveDNS(
           latency: result.latency,
           success: true,
           verified: true,
-          method: "server",
+          method:
+            result.method === "server-udp"
+              ? "server-udp"
+              : result.method === "server-doh"
+                ? "server-doh"
+                : "server",
           fallbackUsed: false,
           provider: provider.name,
         };
@@ -405,16 +424,22 @@ export async function measureDoHBatch(
 
         const domainResults: Record<
           string,
-          { latencies: number[]; successCount: number }
+          { latencies: number[]; successCount: number; method?: string }
         > = {};
         for (const domain of domains) {
-          domainResults[domain] = { latencies: [], successCount: 0 };
+          domainResults[domain] = {
+            latencies: [],
+            successCount: 0,
+            method: undefined,
+          };
         }
 
         for (const res of data.results) {
           if (res.success && res.domain && typeof res.latency === "number") {
             domainResults[res.domain].latencies.push(res.latency);
             domainResults[res.domain].successCount++;
+            if (!domainResults[res.domain].method)
+              domainResults[res.domain].method = res.method;
           }
         }
 
@@ -431,7 +456,11 @@ export async function measureDoHBatch(
               successRate: Math.round((stats.successCount / retries) * 100),
               queriesPerSec: Math.round(stats.successCount / totalTimeSec),
               verified: true,
-              method: "server",
+              method: (stats.method === "server-udp"
+                ? "server-udp"
+                : stats.method === "server-doh"
+                  ? "server-doh"
+                  : "server") as any,
               fallbackUsed: false,
             };
           }
@@ -476,7 +505,12 @@ export async function measureDoH(
       if (!res.verified) {
         verified = false;
       }
-      if (res.method === "server") usedServer = true;
+      if (
+        res.method === "server" ||
+        res.method === "server-udp" ||
+        res.method === "server-doh"
+      )
+        usedServer = true;
       if (res.method === "client") usedClient = true;
     }
   });

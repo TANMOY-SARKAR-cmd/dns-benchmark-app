@@ -25,7 +25,10 @@ export async function runMonitorBenchmark(domains: string[], userId: string) {
 
               if (result.successRate > 0) {
                 final_success = true;
-                if (result.method === "server" || result.method === "mixed" && !result.fallbackUsed) {
+                if (
+                  result.method === "server" ||
+                  (result.method === "mixed" && !result.fallbackUsed)
+                ) {
                   final_method = "server";
                   final_latency = result.avgLatency;
                   fallback_used = false;
@@ -52,10 +55,10 @@ export async function runMonitorBenchmark(domains: string[], userId: string) {
                 domain,
                 provider: provider.name,
                 latency_ms: null,
-                  success: false,
-                  tested_at: new Date().toISOString(),
-                  method: "failed",
-                  fallback_used: true,
+                success: false,
+                tested_at: new Date().toISOString(),
+                method: "failed",
+                fallback_used: true,
               });
             }
           })
@@ -75,17 +78,16 @@ export async function runMonitorBenchmark(domains: string[], userId: string) {
       }
     }
 
-    const benchmarkResults = allQueries
-      .map(q => ({
-        user_id: q.user_id,
-        domain: q.domain,
-        provider: q.provider,
-        latency_ms: q.latency_ms,
-        tested_at: q.tested_at,
+    const benchmarkResults = allQueries.map(q => ({
+      user_id: q.user_id,
+      domain: q.domain,
+      provider: q.provider,
+      latency_ms: q.latency_ms,
+      tested_at: q.tested_at,
 
-        success: q.success,
-        method: q.method || "client",
-      }));
+      success: q.success,
+      method: q.method || "client",
+    }));
 
     if (benchmarkResults.length > 0) {
       const { error } = await supabase
