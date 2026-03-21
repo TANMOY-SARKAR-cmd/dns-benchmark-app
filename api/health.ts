@@ -7,13 +7,7 @@ const HEADERS: Record<string, string> = {
   "Cache-Control": "no-store",
 };
 
-export default function handler(req: Request): Response {
-  if (req.method !== "GET") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: HEADERS,
-    });
-  }
+export async function GET(request: Request) {
 
   return new Response(JSON.stringify({ status: "ok" }), {
     status: 200,

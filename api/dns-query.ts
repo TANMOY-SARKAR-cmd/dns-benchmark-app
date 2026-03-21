@@ -101,22 +101,17 @@ async function resolveDnsQuery(
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
-export default async function handler(req: Request): Promise<Response> {
-  // 1. OPTIONS preflight
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: CORS_HEADERS });
-  }
+export async function OPTIONS(request: Request) {
+  return new Response(null, {
+    status: 204,
+    headers: CORS_HEADERS,
+  });
+}
 
-  // 2. Method guard
-  if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: CORS_HEADERS,
-    });
-  }
+export async function POST(request: Request) {
 
   // 3. Content-Type guard
-  const contentType = req.headers.get("content-type") ?? "";
+  const contentType = request.headers.get("content-type") ?? "";
   if (!contentType.includes("application/json")) {
     return new Response(
       JSON.stringify({ error: "Content-Type must be application/json" }),
@@ -127,7 +122,7 @@ export default async function handler(req: Request): Promise<Response> {
   // 4. Parse body
   let body: unknown;
   try {
-    body = await req.json();
+    body = await request.json();
   } catch {
     return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
       status: 400,
