@@ -334,7 +334,8 @@ async function resolveDNS(
   domain: string,
   provider: DoHProvider
 ): Promise<ResolveDNSResult> {
-  // Try server first
+  let serverResult: any = null;
+
   try {
     const res = await fetch(
       new URL("/api/dns-query", window.location.origin).toString(),
@@ -349,24 +350,42 @@ async function resolveDNS(
     );
 
     const data = await res.json();
-
     if (data.results && data.results.length > 0) {
-      const result = data.results[0];
-      if (result.success) {
-        return {
-          latency: result.latency,
-          success: true,
-          verified: true,
-          method: result.method === "server-udp" ? "server-udp" : "server-doh",
-          provider: provider.name,
-        };
-      }
+      serverResult = data.results[0];
     }
   } catch (e) {
-    // Ignore server error, fallback to client
+    // Ignore server error
   }
 
-  return resolveClientDNS(domain, provider);
+  if (serverResult && serverResult.success === true) {
+    // Use server result
+    return {
+      latency: serverResult.latency,
+      success: true,
+      verified: true,
+      method: serverResult.method === "server-udp" ? "server-udp" : "server-doh",
+      provider: provider.name,
+    };
+  } else {
+    // Only then run client fallback
+    const clientResult = await resolveClientDNS(domain, provider);
+
+    if (clientResult.success) {
+      return {
+        ...clientResult,
+        method: "fallback",
+        provider: provider.name,
+      };
+    } else {
+      return {
+        success: false,
+        latency: null,
+        verified: false,
+        method: "failed",
+        provider: provider.name,
+      };
+    }
+  }
 }
 export async function measureDoHBatch(
   domains: string[],
@@ -417,7 +436,7 @@ export async function measureDoHBatch(
         }
 
         for (const res of data.results) {
-          if (res.success && res.domain && typeof res.latency === "number") {
+          if (res.success === true && res.domain && typeof res.latency === "number") {
             domainResults[res.domain].latencies.push(res.latency);
             domainResults[res.domain].successCount++;
             if (!domainResults[res.domain].method)
@@ -445,15 +464,40 @@ export async function measureDoHBatch(
       }
     }
   } catch (e) {
-    // Fallback if batch server request fails
+    // Ignore server error
   }
 
-  const missingDomains = domains.filter(d => !results[d]);
+  // Only run fallback for domains that were NOT successful on the server
+  const missingDomains = domains.filter(d => !results[d] || results[d].successRate === 0);
   for (const domain of missingDomains) {
     try {
-      results[domain] = await measureDoH(provider, domain, retries);
+      const fallbackResult = await measureDoH(provider, domain, retries);
+      if (fallbackResult && fallbackResult.method !== "failed") {
+          results[domain] = {
+              ...fallbackResult,
+              method: "fallback",
+          };
+      } else {
+          results[domain] = {
+              avgLatency: 0,
+              minLatency: 0,
+              maxLatency: 0,
+              successRate: 0,
+              queriesPerSec: 0,
+              verified: false,
+              method: "failed",
+          };
+      }
     } catch (err) {
-      // ignore
+      results[domain] = {
+          avgLatency: 0,
+          minLatency: 0,
+          maxLatency: 0,
+          successRate: 0,
+          queriesPerSec: 0,
+          verified: false,
+          method: "failed",
+      };
     }
   }
 
