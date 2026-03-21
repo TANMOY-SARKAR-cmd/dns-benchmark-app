@@ -730,34 +730,49 @@ export default function Home() {
 
         // Finalize results for all providers for this domain
         for (const provider of userProviders) {
-          const finalResult = results[domain][provider.name];
-          if (
-            finalResult &&
-            finalResult !== "Error" &&
-            finalResult.successRate > 0
-          ) {
-            allQueries.push({
-              user_id: userId,
-              domain,
-              provider: provider.name,
-              latency_ms: finalResult.avgLatency,
-              success: true,
-              tested_at: new Date().toISOString(),
-              method: finalResult.method === "server" ? "server" : "fallback",
-              fallback_used: finalResult.fallbackUsed,
-            });
-          } else {
-            allQueries.push({
-              user_id: userId,
-              domain,
-              provider: provider.name,
-              latency_ms: null,
-              success: false,
-              tested_at: new Date().toISOString(),
-              method: "failed",
-              fallback_used: true,
-            });
+          let serverResult = null;
+          if (batchData && batchData.results && Array.isArray(batchData.results)) {
+            serverResult = batchData.results.find(
+              (r: any) => r.provider === provider.name && r.domain === domain
+            );
           }
+
+          let clientResult = results[domain][provider.name];
+          // If server succeeded, clientResult might be exactly the server result mapped.
+          // If server failed, clientResult is the fallback result.
+
+          let final_success = false;
+          let final_method = "failed";
+          let final_latency = null;
+          let fallback_used = true;
+
+          const serverSuccess = serverResult && serverResult.success && typeof serverResult.latency === "number";
+
+          const clientSuccess = clientResult && clientResult !== "Error" && clientResult.successRate > 0;
+
+          if (serverSuccess) {
+            final_success = true;
+            final_method = "server";
+            final_latency = serverResult.latency;
+            fallback_used = false;
+          } else if (clientSuccess) {
+            final_success = true;
+            final_method = "fallback";
+            final_latency = clientResult.avgLatency;
+            fallback_used = true;
+          }
+
+          allQueries.push({
+            user_id: userId,
+            domain,
+            provider: provider.name,
+            latency_ms: final_latency,
+            success: final_success,
+            tested_at: new Date().toISOString(),
+            method: final_method,
+            fallback_used,
+          });
+
           completed++;
           setProgress(Math.round((completed / total) * 100));
         }
@@ -789,7 +804,7 @@ export default function Home() {
           tested_at: q.tested_at,
           success: q.success,
           error: q.error || null,
-          method: q.method || "client",
+          method: q.method || "failed",
         }));
 
         if (benchmarkResults.length > 0) {
