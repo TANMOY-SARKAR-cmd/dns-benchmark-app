@@ -103,6 +103,7 @@ export default function Home() {
 
     if (user) {
       fetchMonitors();
+      fetchPreferences();
     }
 
     fetchLeaderboard();
@@ -137,6 +138,39 @@ export default function Home() {
     }
   }, [user]);
 
+  const fetchPreferences = async () => {
+    if (!user) return;
+    try {
+      const { data, error } = await supabase
+        .from("user_preferences")
+        .select("*")
+        .eq("user_id", user.id)
+        .single();
+      if (error && error.code !== "PGRST116") throw error;
+      if (
+        data &&
+        data.custom_dns &&
+        Array.isArray(data.custom_dns) &&
+        data.custom_dns.length > 0
+      ) {
+        const customIp = data.custom_dns[0];
+        setCustomIp(customIp);
+        setUserProviders([
+          ...DOH_PROVIDERS,
+          {
+            name: "Custom",
+            url: "",
+            customIp,
+            color: "#8b5cf6",
+            format: "json",
+          },
+        ]);
+      }
+    } catch (e) {
+      console.error("Preferences fetch error:", e);
+    }
+  };
+
   const fetchMonitors = async () => {
     if (!user) return;
     try {
@@ -145,22 +179,43 @@ export default function Home() {
         .select("*")
         .order("created_at", { ascending: false });
       if (error) throw error;
-      setMonitors(data || []);
+      const normalizedMonitors = (data || []).map(m => ({
+        ...m,
+        domains: Array.isArray(m.domains)
+          ? m.domains
+          : typeof m.domains === "string"
+            ? m.domains.split(",")
+            : [],
+        providers: Array.isArray(m.providers)
+          ? m.providers
+          : typeof m.providers === "string"
+            ? m.providers.split(",")
+            : [],
+      }));
+      setMonitors(normalizedMonitors);
     } catch (e) {
       console.error("Monitors fetch error:", e);
     }
   };
 
   const activeIntervals = useRef<
-    Record<string, { id: NodeJS.Timeout; interval: number; domainsStr: string }>
-  >({});
+    Map<
+      string,
+      {
+        id: NodeJS.Timeout;
+        interval: number;
+        domainsStr: string;
+        providersStr: string;
+      }
+    >
+  >(new Map());
 
   useEffect(() => {
     if (!user) {
-      Object.values(activeIntervals.current).forEach(item =>
+      Array.from(activeIntervals.current.values()).forEach(item =>
         clearInterval(item.id)
       );
-      activeIntervals.current = {};
+      activeIntervals.current.clear();
       return;
     }
 
@@ -169,22 +224,80 @@ export default function Home() {
     monitors.forEach(monitor => {
       if (monitor.is_active) {
         activeMonitorIds.add(monitor.id);
-        const currentSetup = activeIntervals.current[monitor.id];
+        const currentSetup = activeIntervals.current.get(monitor.id);
 
-        const monitorDomainsStr = monitor.domains.join(",");
+        const monitorDomainsStr = (
+          Array.isArray(monitor.domains) ? monitor.domains : []
+        ).join(",");
+        const monitorProvidersStr = (
+          Array.isArray(monitor.providers) ? monitor.providers : []
+        ).join(",");
         if (
           !currentSetup ||
           currentSetup.interval !== monitor.interval_seconds ||
-          currentSetup.domainsStr !== monitorDomainsStr
+          currentSetup.domainsStr !== monitorDomainsStr ||
+          currentSetup.providersStr !== monitorProvidersStr
         ) {
           if (currentSetup) clearInterval(currentSetup.id);
 
           const runTest = async () => {
-            await runMonitorBenchmark(monitor.domains, user.id);
+            if (
+              !monitor.domains ||
+              !monitor.providers ||
+              monitor.domains.length === 0 ||
+              monitor.providers.length === 0
+            )
+              return;
+            const providers = userProviders.filter(p =>
+              monitor.providers.includes(p.name)
+            );
+            if (providers.length === 0) return;
+
+            const results: any[] = [];
+            for (const domain of monitor.domains) {
+              for (const provider of providers) {
+                try {
+                  const result = await measureDoH(provider, domain);
+                  results.push({
+                    user_id: user.id,
+                    domain,
+                    upstream_provider: provider.name,
+                    latency_ms: result.avgLatency,
+                    success: result.successRate > 0,
+                    status: result.successRate > 0 ? "success" : "failed",
+                    method_used: result.method,
+                  });
+                } catch (e) {
+                  results.push({
+                    user_id: user.id,
+                    domain,
+                    upstream_provider: provider.name,
+                    latency_ms: 0,
+                    success: false,
+                    status: "failed",
+                    method_used: "client",
+                  });
+                }
+              }
+            }
+            if (results.length > 0) {
+              await supabase.from("dns_queries").insert(results);
+            }
+
             setLastChecked(prev => ({
               ...prev,
               [monitor.id]: new Date().toLocaleTimeString(),
             }));
+
+            await supabase
+              .from("monitors")
+              .update({
+                last_run_at: new Date().toISOString(),
+                next_run_at: new Date(
+                  Date.now() + monitor.interval_seconds * 1000
+                ).toISOString(),
+              })
+              .eq("id", monitor.id);
           };
 
           if (!currentSetup) {
@@ -195,26 +308,27 @@ export default function Home() {
             runTest,
             monitor.interval_seconds * 1000
           );
-          activeIntervals.current[monitor.id] = {
+          activeIntervals.current.set(monitor.id, {
             id: intervalId,
             interval: monitor.interval_seconds,
             domainsStr: monitorDomainsStr,
-          };
+            providersStr: monitorProvidersStr,
+          });
         }
       }
     });
 
-    Object.keys(activeIntervals.current).forEach(id => {
+    Array.from(activeIntervals.current.keys()).forEach(id => {
       if (!activeMonitorIds.has(id)) {
-        clearInterval(activeIntervals.current[id].id);
-        delete activeIntervals.current[id];
+        clearInterval(activeIntervals.current.get(id)!.id);
+        activeIntervals.current.delete(id);
       }
     });
   }, [monitors, user]);
 
   useEffect(() => {
     return () => {
-      Object.values(activeIntervals.current).forEach(item =>
+      Array.from(activeIntervals.current.values()).forEach(item =>
         clearInterval(item.id)
       );
     };
@@ -250,6 +364,7 @@ export default function Home() {
           .from("monitors")
           .update({
             domains,
+            providers: userProviders.map(p => p.name),
             interval_seconds: monitorInterval,
           })
           .eq("id", editingMonitorId);
@@ -258,6 +373,7 @@ export default function Home() {
         const { error: insertError } = await supabase.from("monitors").insert({
           user_id: user.id,
           domains,
+          providers: userProviders.map(p => p.name),
           interval_seconds: monitorInterval,
         });
         error = insertError;
@@ -824,8 +940,13 @@ export default function Home() {
                                           <div className="font-semibold">
                                             {result.avgLatency}ms
                                           </div>
-                                          <div className="text-xs text-muted-foreground mt-1 text-blue-600 dark:text-blue-400">
-                                            ({result.method})
+                                          <div
+                                            className={`text-[10px] mt-1 inline-flex px-1.5 py-0.5 rounded font-mono font-medium ${result.fallbackUsed ? "bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-400" : "bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400"}`}
+                                          >
+                                            {result.method}
+                                            {result.fallbackUsed
+                                              ? " (fallback)"
+                                              : ""}
                                           </div>
                                           <div className="text-xs text-slate-500 dark:text-slate-400">
                                             {result.minLatency}-
@@ -959,9 +1080,15 @@ cloudflare.com"
                                   </div>
                                   <div
                                     className="text-sm font-mono break-all line-clamp-2"
-                                    title={monitor.domains.join(", ")}
+                                    title={(Array.isArray(monitor.domains)
+                                      ? monitor.domains
+                                      : []
+                                    ).join(", ")}
                                   >
-                                    {monitor.domains.join(", ")}
+                                    {(Array.isArray(monitor.domains)
+                                      ? monitor.domains
+                                      : []
+                                    ).join(", ")}
                                   </div>
                                 </div>
                                 <div>
@@ -970,9 +1097,15 @@ cloudflare.com"
                                   </div>
                                   <div
                                     className="text-sm"
-                                    title={monitor.providers.join(", ")}
+                                    title={(Array.isArray(monitor.providers)
+                                      ? monitor.providers
+                                      : []
+                                    ).join(", ")}
                                   >
-                                    {monitor.providers.join(", ")}
+                                    {(Array.isArray(monitor.providers)
+                                      ? monitor.providers
+                                      : []
+                                    ).join(", ")}
                                   </div>
                                 </div>
                                 <div>
@@ -1000,7 +1133,10 @@ cloudflare.com"
                                   size="sm"
                                   onClick={() => {
                                     setMonitorDomains(
-                                      monitor.domains.join("\n")
+                                      (Array.isArray(monitor.domains)
+                                        ? monitor.domains
+                                        : []
+                                      ).join("\n")
                                     );
                                     setMonitorInterval(
                                       monitor.interval_seconds
@@ -1100,12 +1236,31 @@ cloudflare.com"
                             </span>
                             <span className="font-mono">{log.domain}</span>
                           </div>
-                          <div
-                            className={`font-semibold ${log.status === "success" ? "text-green-600" : "text-red-600"}`}
-                          >
-                            {log.status === "success"
-                              ? `${log.latency_ms}ms`
-                              : "Failed"}
+                          <div className="flex items-center gap-2">
+                            {log.method_used === "client" ? (
+                              <span className="text-[10px] bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-400 px-1.5 py-0.5 rounded font-mono font-medium">
+                                client fallback
+                              </span>
+                            ) : log.method_used === "server" ? (
+                              <span className="text-[10px] bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400 px-1.5 py-0.5 rounded font-mono font-medium">
+                                server
+                              </span>
+                            ) : null}
+                            <div
+                              className={`font-semibold flex items-center gap-1 ${log.status === "success" || log.success ? "text-green-600" : "text-red-600"}`}
+                            >
+                              {log.status === "success" || log.success ? (
+                                <>
+                                  <Activity className="w-3 h-3" />
+                                  <span>{log.latency_ms}ms</span>
+                                </>
+                              ) : (
+                                <>
+                                  <AlertCircle className="w-3 h-3" />
+                                  <span>Failed</span>
+                                </>
+                              )}
+                            </div>
                           </div>
                         </div>
                       );

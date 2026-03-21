@@ -153,10 +153,14 @@ function vitePluginManusDebugCollector(): Plugin {
 const plugins = [react(), tailwindcss(), jsxLocPlugin()];
 
 export default defineConfig({
+  define: {
+    global: "globalThis",
+  },
   envPrefix: ["VITE_", "NEXT_PUBLIC_"],
   plugins,
   resolve: {
     alias: {
+      buffer: "buffer",
       "@": path.resolve(import.meta.dirname, "src"),
       "@shared": path.resolve(import.meta.dirname, "../shared"),
       "@assets": path.resolve(import.meta.dirname, "attached_assets"),
