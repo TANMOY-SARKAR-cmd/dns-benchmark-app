@@ -743,7 +743,7 @@ export default function Home() {
               latency_ms: finalResult.avgLatency,
               success: true,
               tested_at: new Date().toISOString(),
-              method: finalResult.method,
+              method: finalResult.method === "server" ? "server" : "fallback",
               fallback_used: finalResult.fallbackUsed,
             });
           } else {
@@ -751,7 +751,7 @@ export default function Home() {
               user_id: userId,
               domain,
               provider: provider.name,
-              latency_ms: 0,
+              latency_ms: null,
               success: false,
               tested_at: new Date().toISOString(),
               method: "failed",
