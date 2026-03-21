@@ -49,14 +49,10 @@ export type BenchmarkResult = {
   queriesPerSec: number;
   verified: boolean;
   method:
-    | "server"
     | "server-udp"
     | "server-doh"
-    | "client"
-    | "client-fallback"
-    | "failed"
-    | "mixed";
-  fallbackUsed: boolean;
+    | "fallback"
+    | "failed";
 };
 
 async function fetchWithTimeout(
@@ -217,14 +213,10 @@ export type ResolveDNSResult = {
   success: boolean;
   verified: boolean;
   method:
-    | "server"
     | "server-udp"
     | "server-doh"
-    | "client"
-    | "client-fallback"
-    | "failed"
-    | "mixed";
-  fallbackUsed: boolean;
+    | "fallback"
+    | "failed";
   provider?: string;
 };
 
@@ -267,8 +259,7 @@ async function resolveClientDNS(
     if (raceResult.success) {
       return {
         ...raceResult,
-        method: "client-fallback",
-        fallbackUsed: true,
+        method: "fallback",
         provider: provider.name,
       };
     }
@@ -282,7 +273,6 @@ async function resolveClientDNS(
     success: false,
     verified: false,
     method: "failed",
-    fallbackUsed: true,
     provider: provider.name,
   };
 }
@@ -324,7 +314,6 @@ export async function measureClientDoH(
       queriesPerSec: 0,
       verified: false,
       method: "failed",
-      fallbackUsed: true,
     };
   }
 
@@ -337,8 +326,7 @@ export async function measureClientDoH(
     successRate: Math.round((successCount / retries) * 100),
     queriesPerSec: Math.round(successCount / totalTimeSec),
     verified: verified,
-    method: "client-fallback",
-    fallbackUsed: true,
+    method: "fallback",
   };
 }
 
@@ -369,13 +357,7 @@ async function resolveDNS(
           latency: result.latency,
           success: true,
           verified: true,
-          method:
-            result.method === "server-udp"
-              ? "server-udp"
-              : result.method === "server-doh"
-                ? "server-doh"
-                : "server",
-          fallbackUsed: false,
+          method: result.method === "server-udp" ? "server-udp" : "server-doh",
           provider: provider.name,
         };
       }
@@ -456,12 +438,7 @@ export async function measureDoHBatch(
               successRate: Math.round((stats.successCount / retries) * 100),
               queriesPerSec: Math.round(stats.successCount / totalTimeSec),
               verified: true,
-              method: (stats.method === "server-udp"
-                ? "server-udp"
-                : stats.method === "server-doh"
-                  ? "server-doh"
-                  : "server") as any,
-              fallbackUsed: false,
+              method: (stats.method === "server-udp" ? "server-udp" : "server-doh") as any,
             };
           }
         }
@@ -491,8 +468,7 @@ export async function measureDoH(
   const latencies: number[] = [];
   let successCount = 0;
   let verified = true;
-  let usedServer = false;
-  let usedClient = false;
+  let finalMethod: any = "failed";
 
   const startTime = performance.now();
 
@@ -505,13 +481,11 @@ export async function measureDoH(
       if (!res.verified) {
         verified = false;
       }
-      if (
-        res.method === "server" ||
-        res.method === "server-udp" ||
-        res.method === "server-doh"
-      )
-        usedServer = true;
-      if (res.method === "client") usedClient = true;
+      if (res.method && finalMethod === "failed") {
+          finalMethod = res.method;
+      } else if (res.method && res.method !== "fallback") {
+          finalMethod = res.method;
+      }
     }
   });
 
@@ -533,8 +507,6 @@ export async function measureDoH(
     successRate: Math.round((successCount / retries) * 100),
     queriesPerSec: Math.round(successCount / totalTimeSec),
     verified: verified,
-    method:
-      usedServer && usedClient ? "mixed" : usedServer ? "server" : "client",
-    fallbackUsed: usedClient || (usedClient && usedServer),
+    method: finalMethod as any,
   };
 }
