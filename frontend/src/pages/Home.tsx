@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { measureDoH, DOH_PROVIDERS, BenchmarkResult } from "@/lib/doh";
+import { measureDoH, measureClientDoH, DOH_PROVIDERS, BenchmarkResult } from "@/lib/doh";
 import { supabase } from "@/lib/supabase";
 import { isSupabaseConfigured, ENV } from "@/config/env";
 import {
@@ -563,66 +563,86 @@ export default function Home() {
           // Ignore, fallback to client DoH handled below
         }
 
-        // Process each provider
+        const failedProviders = [];
+
+        // First pass: identify server successes and failed providers
         for (const provider of userProviders) {
-          try {
-            let serverResult = null;
-            if (batchData && batchData.results && Array.isArray(batchData.results)) {
-               serverResult = batchData.results.find((r: any) => r.provider === provider.name && r.domain === domain);
-            }
+          let serverResult = null;
+          if (batchData && batchData.results && Array.isArray(batchData.results)) {
+             serverResult = batchData.results.find((r: any) => r.provider === provider.name && r.domain === domain);
+          }
 
-            let finalResult: BenchmarkResult;
+          if (serverResult && serverResult.success && typeof serverResult.latency === "number") {
+            // Server succeeded
+            results[domain][provider.name] = {
+              avgLatency: serverResult.latency,
+              minLatency: serverResult.latency,
+              maxLatency: serverResult.latency,
+              successRate: 100,
+              queriesPerSec: 1, // Placeholder
+              verified: true,
+              method: "server",
+              fallbackUsed: false
+            };
+          } else {
+            failedProviders.push(provider);
+          }
+        }
 
-            if (serverResult && serverResult.success && typeof serverResult.latency === "number") {
-              // Server succeeded
-              finalResult = {
-                avgLatency: serverResult.latency,
-                minLatency: serverResult.latency,
-                maxLatency: serverResult.latency,
-                successRate: 100,
-                queriesPerSec: 1, // Placeholder
-                verified: true,
-                method: "server",
-                fallbackUsed: false
-              };
-            } else {
-              // Fallback to client DoH
-              toast.warning(`Backend failed for ${provider.name}, using fallback`);
-              finalResult = await measureDoH(provider, domain);
-            }
+        // Second pass: run client fallback concurrently only for failed providers
+        if (failedProviders.length > 0) {
+          const fallbackResults = await Promise.all(
+            failedProviders.map(async (provider) => {
+              try {
+                toast.warning(`Backend failed for ${provider.name}, using fallback`);
+                const fallbackResult = await measureClientDoH(provider, domain);
+                return { provider, result: fallbackResult };
+              } catch (error) {
+                return { provider, result: "Error" as const };
+              }
+            })
+          );
 
-            results[domain][provider.name] = finalResult;
-
-            if (finalResult.successRate === 0) {
+          for (const { provider, result } of fallbackResults) {
+            results[domain][provider.name] = result;
+            if (result === "Error" || result.successRate === 0) {
               toast.error(`All methods failed for ${provider.name} on ${domain}`);
-            } else if (finalResult.successRate > 0) {
-              allQueries.push({
-                user_id: userId,
-                domain,
-                upstream_provider: provider.name,
-                latency_ms: finalResult.avgLatency,
-                status: "success",
-                created_at: new Date().toISOString(),
-                method_used: finalResult.method,
-                fallback_used: finalResult.fallbackUsed,
-              });
             }
-          } catch (error) {
-             results[domain][provider.name] = "Error";
-             allQueries.push({
-                user_id: userId,
-                domain,
-                upstream_provider: provider.name,
-                latency_ms: 0,
-                status: "failed",
-                created_at: new Date().toISOString(),
-                method_used: "failed",
-                fallback_used: true,
-             });
+          }
+        }
+
+        // Finalize results for all providers for this domain
+        for (const provider of userProviders) {
+          const finalResult = results[domain][provider.name];
+          if (finalResult && finalResult !== "Error" && finalResult.successRate > 0) {
+            allQueries.push({
+              user_id: userId,
+              domain,
+              upstream_provider: provider.name,
+              latency_ms: finalResult.avgLatency,
+              status: "success",
+              created_at: new Date().toISOString(),
+              method_used: finalResult.method,
+              fallback_used: finalResult.fallbackUsed,
+            });
+          } else {
+            allQueries.push({
+              user_id: userId,
+              domain,
+              upstream_provider: provider.name,
+              latency_ms: 0,
+              status: "failed",
+              created_at: new Date().toISOString(),
+              method_used: "failed",
+              fallback_used: true,
+            });
           }
           completed++;
           setProgress(Math.round((completed / total) * 100));
         }
+
+        // Small delay between domains
+        await new Promise(r => setTimeout(r, 150));
       }
 
       setTestResults(results);
@@ -960,9 +980,9 @@ export default function Home() {
                               } else if (result && result.method === "server") {
                                 badgeColor = "bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400";
                                 badgeText = "Server";
-                              } else if (result && (result.method === "client" || result.method === "mixed")) {
+                              } else if (result && (result.method === "client" || result.method === "client-fallback" || result.method === "mixed")) {
                                 badgeColor = "bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400";
-                                badgeText = "Browser";
+                                badgeText = "Client Fallback";
                               }
 
                               return (
@@ -980,7 +1000,7 @@ export default function Home() {
                                       className={`text-[10px] inline-flex px-2 py-1 rounded font-mono font-medium ${badgeColor}`}
                                     >
                                       {badgeText}
-                                      {!isError && result && result.fallbackUsed ? " (fallback)" : ""}
+                                      {}
                                     </div>
                                   </td>
                                   <td className="py-3 px-4 text-center">
@@ -1429,9 +1449,9 @@ cloudflare.com"
                                 </td>
                                 <td className="py-3 px-4">
                                   {record.method_used ? (
-                                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-medium ${record.method_used === "server" ? "bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400" : record.method_used === "client" ? "bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400" : "bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-400"}`}>
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-medium ${record.method_used === "server" ? "bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400" : (record.method_used === "client" || record.method_used === "client-fallback") ? "bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400" : "bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-400"}`}>
                                       {record.method_used}
-                                      {record.fallback_used ? " (fallback)" : ""}
+                                      {}
                                     </span>
                                   ) : (
                                     <span className="text-slate-400">-</span>
