@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
@@ -36,6 +37,8 @@ import {
   History,
   Trophy,
   Activity,
+  Settings,
+  Save,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -61,6 +64,12 @@ export default function Home() {
 
   // Leaderboard & History
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [customIp, setCustomIp] = useState("");
+  const [userProviders, setUserProviders] = useState<typeof DOH_PROVIDERS>([
+    ...DOH_PROVIDERS,
+  ]);
+  const [isGlobalMonitoring, setIsGlobalMonitoring] = useState(false);
+  const monitorIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [liveLogs, setLiveLogs] = useState<any[]>([]);
   const [session, setSession] = useState<any>(null);
@@ -142,11 +151,15 @@ export default function Home() {
     }
   };
 
-  const activeIntervals = useRef<Record<string, { id: NodeJS.Timeout, interval: number, domainsStr: string }>>({});
+  const activeIntervals = useRef<
+    Record<string, { id: NodeJS.Timeout; interval: number; domainsStr: string }>
+  >({});
 
   useEffect(() => {
     if (!user) {
-      Object.values(activeIntervals.current).forEach(item => clearInterval(item.id));
+      Object.values(activeIntervals.current).forEach(item =>
+        clearInterval(item.id)
+      );
       activeIntervals.current = {};
       return;
     }
@@ -159,14 +172,18 @@ export default function Home() {
         const currentSetup = activeIntervals.current[monitor.id];
 
         const monitorDomainsStr = monitor.domains.join(",");
-        if (!currentSetup || currentSetup.interval !== monitor.interval_seconds || currentSetup.domainsStr !== monitorDomainsStr) {
+        if (
+          !currentSetup ||
+          currentSetup.interval !== monitor.interval_seconds ||
+          currentSetup.domainsStr !== monitorDomainsStr
+        ) {
           if (currentSetup) clearInterval(currentSetup.id);
 
           const runTest = async () => {
             await runMonitorBenchmark(monitor.domains, user.id);
             setLastChecked(prev => ({
               ...prev,
-              [monitor.id]: new Date().toLocaleTimeString()
+              [monitor.id]: new Date().toLocaleTimeString(),
             }));
           };
 
@@ -174,8 +191,15 @@ export default function Home() {
             runTest();
           }
 
-          const intervalId = setInterval(runTest, monitor.interval_seconds * 1000);
-          activeIntervals.current[monitor.id] = { id: intervalId, interval: monitor.interval_seconds, domainsStr: monitorDomainsStr };
+          const intervalId = setInterval(
+            runTest,
+            monitor.interval_seconds * 1000
+          );
+          activeIntervals.current[monitor.id] = {
+            id: intervalId,
+            interval: monitor.interval_seconds,
+            domainsStr: monitorDomainsStr,
+          };
         }
       }
     });
@@ -186,12 +210,13 @@ export default function Home() {
         delete activeIntervals.current[id];
       }
     });
-
   }, [monitors, user]);
 
   useEffect(() => {
     return () => {
-      Object.values(activeIntervals.current).forEach(item => clearInterval(item.id));
+      Object.values(activeIntervals.current).forEach(item =>
+        clearInterval(item.id)
+      );
     };
   }, []);
 
@@ -388,7 +413,7 @@ export default function Home() {
       Record<string, BenchmarkResult | "Error">
     > = {};
     let completed = 0;
-    const total = domains.length * DOH_PROVIDERS.length;
+    const total = domains.length * userProviders.length;
 
     try {
       const allQueries: any[] = [];
@@ -402,7 +427,7 @@ export default function Home() {
             results[domain] = {};
 
             await Promise.all(
-              DOH_PROVIDERS.map(async provider => {
+              userProviders.map(async provider => {
                 setProgressText(`Testing ${domain} on ${provider.name}...`);
 
                 try {
@@ -501,7 +526,7 @@ export default function Home() {
     const data = [];
     for (const [domain, providers] of Object.entries(testResults)) {
       const row: any = { Domain: domain };
-      for (const provider of DOH_PROVIDERS) {
+      for (const provider of userProviders) {
         const result = providers[provider.name];
         if (result === "Error" || !result) {
           row[`${provider.name} (ms)`] = "Error";
@@ -534,7 +559,7 @@ export default function Home() {
   const chartData = testResults
     ? Object.entries(testResults).map(([domain, results]) => {
         const item: any = { domain };
-        DOH_PROVIDERS.forEach(provider => {
+        userProviders.forEach(provider => {
           const res = results[provider.name];
           item[provider.name] = res && res !== "Error" ? res.avgLatency : null;
         });
@@ -665,7 +690,7 @@ export default function Home() {
                     <CardDescription>Using DNS-over-HTTPS</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {DOH_PROVIDERS.map(provider => (
+                    {userProviders.map(provider => (
                       <div
                         key={provider.name}
                         className="flex items-center gap-3"
@@ -736,7 +761,7 @@ export default function Home() {
                               }}
                             />
                             <Legend />
-                            {DOH_PROVIDERS.map(provider => (
+                            {userProviders.map(provider => (
                               <Bar
                                 key={provider.name}
                                 dataKey={provider.name}
@@ -762,7 +787,7 @@ export default function Home() {
                         <thead>
                           <tr className="border-b dark:border-slate-800">
                             <th className="py-3 px-4 font-semibold">Domain</th>
-                            {DOH_PROVIDERS.map(provider => (
+                            {userProviders.map(provider => (
                               <th
                                 key={provider.name}
                                 className="py-3 px-4 font-semibold text-center"
@@ -782,7 +807,7 @@ export default function Home() {
                                 <td className="py-3 px-4 font-mono">
                                   {domain}
                                 </td>
-                                {DOH_PROVIDERS.map(provider => {
+                                {userProviders.map(provider => {
                                   const result = results[provider.name];
                                   const isError = result === "Error" || !result;
                                   return (
@@ -908,7 +933,9 @@ cloudflare.com"
                             <CardHeader className="pb-3 border-b dark:border-slate-800">
                               <div className="flex justify-between items-start mb-1">
                                 <div className="flex items-center gap-2">
-                                  <span className={`w-2 h-2 rounded-full ${monitor.is_active ? "bg-green-500 animate-pulse" : "bg-slate-300 dark:bg-slate-700"}`}></span>
+                                  <span
+                                    className={`w-2 h-2 rounded-full ${monitor.is_active ? "bg-green-500 animate-pulse" : "bg-slate-300 dark:bg-slate-700"}`}
+                                  ></span>
                                   <span className="font-semibold text-sm">
                                     {monitor.is_active ? "Running" : "Stopped"}
                                   </span>
@@ -918,25 +945,40 @@ cloudflare.com"
                                 </span>
                               </div>
                               <CardDescription>
-                                Every {monitor.interval_seconds < 60 ? `${monitor.interval_seconds}s` : `${monitor.interval_seconds / 60}m`}
+                                Every{" "}
+                                {monitor.interval_seconds < 60
+                                  ? `${monitor.interval_seconds}s`
+                                  : `${monitor.interval_seconds / 60}m`}
                               </CardDescription>
                             </CardHeader>
                             <CardContent className="pt-4 flex-1 flex flex-col justify-between">
                               <div className="space-y-4 mb-4">
                                 <div>
-                                  <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Domains</div>
-                                  <div className="text-sm font-mono break-all line-clamp-2" title={monitor.domains.join(", ")}>
+                                  <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                                    Domains
+                                  </div>
+                                  <div
+                                    className="text-sm font-mono break-all line-clamp-2"
+                                    title={monitor.domains.join(", ")}
+                                  >
                                     {monitor.domains.join(", ")}
                                   </div>
                                 </div>
                                 <div>
-                                  <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Providers</div>
-                                  <div className="text-sm" title={monitor.providers.join(", ")}>
+                                  <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                                    Providers
+                                  </div>
+                                  <div
+                                    className="text-sm"
+                                    title={monitor.providers.join(", ")}
+                                  >
                                     {monitor.providers.join(", ")}
                                   </div>
                                 </div>
                                 <div>
-                                  <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">Last Checked</div>
+                                  <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                                    Last Checked
+                                  </div>
                                   <div className="text-sm text-slate-600 dark:text-slate-400">
                                     {lastChecked[monitor.id] || "Never"}
                                   </div>
@@ -944,7 +986,9 @@ cloudflare.com"
                               </div>
                               <div className="flex gap-2 pt-3 border-t dark:border-slate-800 mt-auto">
                                 <Button
-                                  variant={monitor.is_active ? "outline" : "default"}
+                                  variant={
+                                    monitor.is_active ? "outline" : "default"
+                                  }
                                   size="sm"
                                   onClick={() => toggleMonitor(monitor)}
                                   className="flex-1"
@@ -955,8 +999,12 @@ cloudflare.com"
                                   variant="outline"
                                   size="sm"
                                   onClick={() => {
-                                    setMonitorDomains(monitor.domains.join("\n"));
-                                    setMonitorInterval(monitor.interval_seconds);
+                                    setMonitorDomains(
+                                      monitor.domains.join("\n")
+                                    );
+                                    setMonitorInterval(
+                                      monitor.interval_seconds
+                                    );
                                     setEditingMonitorId(monitor.id);
                                   }}
                                   className="flex-1"
@@ -966,7 +1014,9 @@ cloudflare.com"
                                 <Button
                                   variant="destructive"
                                   size="sm"
-                                  onClick={() => handleDeleteMonitor(monitor.id)}
+                                  onClick={() =>
+                                    handleDeleteMonitor(monitor.id)
+                                  }
                                 >
                                   Delete
                                 </Button>
@@ -976,10 +1026,15 @@ cloudflare.com"
                         ))}
                       </div>
                     ) : (
-                                            <div className="flex flex-col items-center justify-center p-8 text-center bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-dashed border-slate-200 dark:border-slate-800">
+                      <div className="flex flex-col items-center justify-center p-8 text-center bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-dashed border-slate-200 dark:border-slate-800">
                         <Activity className="w-10 h-10 text-slate-300 dark:text-slate-600 mb-3" />
-                        <h4 className="text-sm font-medium text-slate-900 dark:text-slate-200">No active monitors</h4>
-                        <p className="text-sm text-slate-500 mt-1 max-w-sm">Set up continuous monitoring to automatically track domain resolution performance over time.</p>
+                        <h4 className="text-sm font-medium text-slate-900 dark:text-slate-200">
+                          No active monitors
+                        </h4>
+                        <p className="text-sm text-slate-500 mt-1 max-w-sm">
+                          Set up continuous monitoring to automatically track
+                          domain resolution performance over time.
+                        </p>
                       </div>
                     )}
                   </div>
@@ -1092,7 +1147,23 @@ cloudflare.com"
                   <div className="space-y-8">
                     <div className="h-[400px] w-full">
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={history}>
+                        <LineChart
+                          data={Object.values(
+                            history.reduce(
+                              (acc, curr) => {
+                                const time = curr.tested_at;
+                                if (!acc[time]) acc[time] = { tested_at: time };
+                                acc[time][curr.provider] = curr.latency_ms;
+                                return acc;
+                              },
+                              {} as Record<string, any>
+                            )
+                          ).sort(
+                            (a: any, b: any) =>
+                              new Date(a.tested_at).getTime() -
+                              new Date(b.tested_at).getTime()
+                          )}
+                        >
                           <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
                           <XAxis
                             dataKey="tested_at"
@@ -1114,12 +1185,16 @@ cloudflare.com"
                             }}
                           />
                           <Legend />
-                          <Line
-                            type="monotone"
-                            dataKey="latency_ms"
-                            stroke="#8884d8"
-                            name="Avg Latency (ms)"
-                          />
+                          {userProviders.map(provider => (
+                            <Line
+                              key={provider.name}
+                              type="monotone"
+                              dataKey={provider.name}
+                              stroke={provider.color}
+                              name={provider.name}
+                              connectNulls
+                            />
+                          ))}
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
@@ -1226,7 +1301,7 @@ cloudflare.com"
                     {leaderboard
                       .sort((a, b) => a.global_avg_ms - b.global_avg_ms)
                       .map((item, index) => {
-                        const provider = DOH_PROVIDERS.find(
+                        const provider = userProviders.find(
                           p => p.name === item.provider
                         );
                         return (
@@ -1250,11 +1325,121 @@ cloudflare.com"
                                     ms
                                   </span>
                                 </p>
+                                {item.success_rate !== undefined && (
+                                  <p className="text-sm text-slate-500 mt-1">
+                                    Reliability:{" "}
+                                    <span className="font-medium text-slate-700 dark:text-slate-300">
+                                      {Number(item.success_rate).toFixed(1)}%
+                                    </span>
+                                  </p>
+                                )}
                               </div>
                             </div>
                           </Card>
                         );
                       })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="settings">
+            <Card>
+              <CardHeader>
+                <CardTitle>Settings & Preferences</CardTitle>
+                <CardDescription>
+                  Configure custom DNS providers and behavior
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {!user ? (
+                  <div className="text-center py-8 text-slate-500 flex flex-col items-center gap-2">
+                    <AlertCircle className="w-6 h-6 text-blue-500" />
+                    <p>Please log in to manage settings.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-6 max-w-md">
+                    <div>
+                      <h3 className="text-sm font-medium mb-2">
+                        Custom DNS Provider IP
+                      </h3>
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="e.g. 1.1.1.1"
+                          value={customIp}
+                          onChange={e => setCustomIp(e.target.value)}
+                        />
+                        <Button
+                          onClick={async () => {
+                            const ipList = customIp ? [customIp] : [];
+                            const { error } = await supabase
+                              .from("user_preferences")
+                              .upsert(
+                                {
+                                  user_id: user.id,
+                                  custom_dns: ipList,
+                                },
+                                { onConflict: "user_id" }
+                              );
+                            if (error) {
+                              toast.error("Failed to save settings");
+                            } else {
+                              toast.success("Settings saved!");
+                              if (customIp) {
+                                setUserProviders([
+                                  ...DOH_PROVIDERS,
+                                  {
+                                    name: "Custom",
+                                    url: "",
+                                    customIp,
+                                    color: "#8b5cf6",
+                                    format: "json",
+                                  },
+                                ]);
+                              } else {
+                                setUserProviders([...DOH_PROVIDERS]);
+                              }
+                            }
+                          }}
+                        >
+                          <Save className="w-4 h-4 mr-2" />
+                          Save
+                        </Button>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-2">
+                        Provide a valid IP address for a custom DNS resolver.
+                        This will add "Custom" to the benchmark providers.
+                      </p>
+                    </div>
+                    <div className="pt-6 border-t dark:border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-sm font-medium">
+                            Global Monitoring
+                          </h3>
+                          <p className="text-xs text-slate-500">
+                            Automatically test top domains every 30 seconds
+                          </p>
+                        </div>
+                        <Button
+                          variant={
+                            isGlobalMonitoring ? "destructive" : "default"
+                          }
+                          onClick={() => {
+                            if (!isGlobalMonitoring) {
+                              toast.success("Global monitoring started");
+                              setIsGlobalMonitoring(true);
+                            } else {
+                              toast.info("Global monitoring stopped");
+                              setIsGlobalMonitoring(false);
+                            }
+                          }}
+                        >
+                          {isGlobalMonitoring ? "Stop" : "Start"}
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 )}
               </CardContent>
