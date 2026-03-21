@@ -22,29 +22,29 @@ export async function runMonitorBenchmark(domains: string[], userId: string) {
                 allQueries.push({
                   user_id: userId,
                   domain,
-                  upstream_provider: provider.name,
+                  provider: provider.name,
                   latency_ms: result.avgLatency,
-                  status: "success",
-                  created_at: new Date().toISOString(),
+                  success: true,
+                  tested_at: new Date().toISOString(),
                 });
               } else {
                 allQueries.push({
                   user_id: userId,
                   domain,
-                  upstream_provider: provider.name,
+                  provider: provider.name,
                   latency_ms: 0,
-                  status: "failed",
-                  created_at: new Date().toISOString(),
+                  success: false,
+                  tested_at: new Date().toISOString(),
                 });
               }
             } catch (error) {
               allQueries.push({
                 user_id: userId,
                 domain,
-                upstream_provider: provider.name,
+                provider: provider.name,
                 latency_ms: 0,
-                status: "failed",
-                created_at: new Date().toISOString(),
+                success: false,
+                tested_at: new Date().toISOString(),
               });
             }
           })
@@ -65,13 +65,13 @@ export async function runMonitorBenchmark(domains: string[], userId: string) {
     }
 
     const benchmarkResults = allQueries
-      .filter(q => q.status === "success")
+      .filter(q => q.success)
       .map(q => ({
         user_id: q.user_id,
         domain: q.domain,
-        provider: q.upstream_provider,
+        provider: q.provider,
         latency_ms: q.latency_ms,
-        tested_at: q.created_at,
+        tested_at: q.tested_at,
       }));
 
     if (benchmarkResults.length > 0) {
