@@ -48,8 +48,8 @@ export type BenchmarkResult = {
   successRate: number;
   queriesPerSec: number;
   verified: boolean;
-  method: "server" | "client" | "mixed";
-  fallbackUsed?: boolean;
+  method: "server" | "client" | "failed" | "mixed";
+  fallbackUsed: boolean;
 };
 
 async function fetchWithTimeout(
@@ -206,89 +206,40 @@ async function binaryPostQuery(
 }
 
 export type ResolveDNSResult = {
-  latency: number;
+  latency: number | null;
   success: boolean;
   verified: boolean;
-  method: "server" | "client";
+  method: "server" | "client" | "failed" | "mixed";
   fallbackUsed: boolean;
+  provider?: string;
 };
 
 async function resolveDNS(
   domain: string,
   provider: DoHProvider
 ): Promise<ResolveDNSResult> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 2000);
-  const start = performance.now();
-
+  // Try server first
   try {
-    // 1. Try server first (using existing /api/dns-query)
-    const url = new URL("/api/dns-query", window.location.origin);
-    const response = await fetch(url.toString(), {
+    const res = await fetch(new URL("/api/dns-query", window.location.origin).toString(), {
       method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        domain,
-        provider: provider.name,
-        customIp: provider.customIp,
-      }),
-      signal: controller.signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ domain, provider: provider.name, customIp: provider.customIp })
     });
 
-    if (response.ok) {
-      const data = await response.json();
-      if (data.success && typeof data.latency === "number") {
-        clearTimeout(timeoutId);
-        return {
-          latency: performance.now() - start, // Calculate true latency from client perspective
-          success: true,
-          verified: data.verified,
-          method: "server",
-          fallbackUsed: false,
-        };
-      }
+    const data = await res.json();
+
+    if (data.success) {
+      return { ...data, provider: provider.name, fallbackUsed: false, verified: true };
     }
   } catch (e) {
     // Ignore server error, fallback to client
   }
 
-  // If timeout already reached during server try, fail early
-  if (controller.signal.aborted) {
-    return {
-      latency: 0,
-      success: false,
-      verified: false,
-      method: "client",
-      fallbackUsed: true,
-    };
-  }
+  // Fallback to client DoH
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 2000);
 
-  // Custom provider without valid DoH url shouldn't race the client methods since they'll fail anyway
-  if (
-    provider.name === "Custom" &&
-    (!provider.url || !provider.url.startsWith("https://"))
-  ) {
-    clearTimeout(timeoutId);
-    return {
-      latency: 0,
-      success: false,
-      verified: false,
-      method: "client",
-      fallbackUsed: true,
-    };
-  }
-
-  // 2. Fallback to client multi-method racing
   try {
-    // We want the first successful method.
-    // If we use Promise.race, any fast failure rejects the race.
-    // So we use a wrapper that resolves only on success, and never rejects (except on timeout).
-    // Or we use Promise.any! The instructions said "Add Promise.race for DoH fallback", so we'll use Promise.any to be robust,
-    // actually, let's use a custom race that ignores failures to strictly use Promise.race but correctly.
-
     let failedCount = 0;
     const wrapMethod = async (fn: Promise<MethodResult>) => {
       const res = await fn;
@@ -297,7 +248,7 @@ async function resolveDNS(
       }
       failedCount++;
       if (failedCount === 2) {
-        return { latency: 0, success: false, verified: false };
+        return { latency: null, success: false, verified: false };
       }
       // Never resolve if it's not the last failure, wait for the other to finish or timeout
       return new Promise<MethodResult>(() => {});
@@ -323,22 +274,23 @@ async function resolveDNS(
         ...raceResult,
         method: "client",
         fallbackUsed: true,
+        provider: provider.name,
       };
     }
   } catch (e) {
-    // Ignore race error
+    // Ignore error
   }
 
   clearTimeout(timeoutId);
   return {
-    latency: 0,
+    latency: null,
     success: false,
     verified: false,
-    method: "client",
+    method: "failed",
     fallbackUsed: true,
+    provider: provider.name,
   };
 }
-
 export async function measureDoHBatch(
   domains: string[],
   provider: DoHProvider,
@@ -408,6 +360,7 @@ export async function measureDoHBatch(
               queriesPerSec: Math.round(stats.successCount / totalTimeSec),
               verified: true,
               method: "server",
+              fallbackUsed: false,
             };
           }
         }
@@ -446,7 +399,7 @@ export async function measureDoH(
   const promises = Array.from({ length: retries }).map(async () => {
     const res = await resolveDNS(domain, provider);
 
-    if (res.success) {
+    if (res.success && res.latency !== null) {
       successCount++;
       latencies.push(res.latency);
       if (!res.verified) {
@@ -477,6 +430,6 @@ export async function measureDoH(
     verified: verified,
     method:
       usedServer && usedClient ? "mixed" : usedServer ? "server" : "client",
-    fallbackUsed: usedClient && usedServer,
+    fallbackUsed: usedClient || (usedClient && usedServer),
   };
 }

@@ -266,6 +266,7 @@ export default function Home() {
                     success: result.successRate > 0,
                     status: result.successRate > 0 ? "success" : "failed",
                     method_used: result.method,
+                    fallback_used: result.fallbackUsed,
                   });
                 } catch (e) {
                   results.push({
@@ -275,7 +276,8 @@ export default function Home() {
                     latency_ms: 0,
                     success: false,
                     status: "failed",
-                    method_used: "client",
+                    method_used: "failed",
+                    fallback_used: true,
                   });
                 }
               }
@@ -568,6 +570,8 @@ export default function Home() {
                       latency_ms: result.avgLatency,
                       status: "success",
                       created_at: new Date().toISOString(),
+                      method_used: result.method,
+                      fallback_used: result.fallbackUsed,
                     });
                   }
                 } catch (error) {
@@ -579,6 +583,8 @@ export default function Home() {
                     latency_ms: 0,
                     status: "failed",
                     created_at: new Date().toISOString(),
+                    method_used: "failed",
+                    fallback_used: true,
                   });
                 }
                 completed++;
@@ -941,7 +947,7 @@ export default function Home() {
                                             {result.avgLatency}ms
                                           </div>
                                           <div
-                                            className={`text-[10px] mt-1 inline-flex px-1.5 py-0.5 rounded font-mono font-medium ${result.fallbackUsed ? "bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-400" : "bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400"}`}
+                                            className={`text-[10px] mt-1 inline-flex px-1.5 py-0.5 rounded font-mono font-medium ${result.method === "server" ? "bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400" : result.method === "client" ? "bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400" : "bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-400"}`}
                                           >
                                             {result.method}
                                             {result.fallbackUsed
@@ -1373,6 +1379,9 @@ cloudflare.com"
                                 Latency
                               </th>
                               <th className="py-3 px-4 font-semibold">
+                                Method
+                              </th>
+                              <th className="py-3 px-4 font-semibold">
                                 Action
                               </th>
                             </tr>
@@ -1392,6 +1401,16 @@ cloudflare.com"
                                 <td className="py-3 px-4">{record.provider}</td>
                                 <td className="py-3 px-4">
                                   {record.latency_ms}ms
+                                </td>
+                                <td className="py-3 px-4">
+                                  {record.method_used ? (
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-medium ${record.method_used === "server" ? "bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400" : record.method_used === "client" ? "bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400" : "bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-400"}`}>
+                                      {record.method_used}
+                                      {record.fallback_used ? " (fallback)" : ""}
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400">-</span>
+                                  )}
                                 </td>
                                 <td className="py-3 px-4">
                                   {record.keep ? (
