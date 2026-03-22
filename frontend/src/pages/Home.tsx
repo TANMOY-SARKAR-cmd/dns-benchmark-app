@@ -259,11 +259,11 @@ export default function Home() {
                 const provider = userProviders.find((p: any) => p.name === providerName) || DOH_PROVIDERS.find((p: any) => p.name === providerName);
                 if (!provider) continue;
 
-                const isCustom1 = !DOH_PROVIDERS.some((dp: any) => dp.name === provider.name);
+                const isCustom = !DOH_PROVIDERS.some((dp: any) => dp.name === provider.name);
                 let serverResult = null;
                 if (batchData && batchData.results && Array.isArray(batchData.results)) {
                   serverResult = batchData.results.find(
-                    (r: any) => r.provider === (isCustom1 ? "custom" : provider.key) && r.domain === domain
+                    (r: any) => r.provider === (isCustom ? "custom" : provider.key) && r.domain === domain
                   );
                 }
 
@@ -305,11 +305,11 @@ export default function Home() {
                 const provider = userProviders.find((p: any) => p.name === providerName) || DOH_PROVIDERS.find((p: any) => p.name === providerName);
                 if (!provider) continue;
 
-                const isCustom2 = !DOH_PROVIDERS.some((dp: any) => dp.name === provider.name);
+                const isCustom = !DOH_PROVIDERS.some((dp: any) => dp.name === provider.name);
                 let serverResult = null;
                 if (batchData && batchData.results && Array.isArray(batchData.results)) {
                   serverResult = batchData.results.find(
-                    (r: any) => r.provider === (isCustom2 ? "custom" : provider.key) && r.domain === domain
+                    (r: any) => r.provider === (isCustom ? "custom" : provider.key) && r.domain === domain
                   );
                 }
 
@@ -745,7 +745,7 @@ export default function Home() {
 
         // First pass: identify server successes and failed providers
         for (const provider of userProviders) {
-          const isCustom3 = !DOH_PROVIDERS.some(dp => dp.name === provider.name);
+          const isCustom = !DOH_PROVIDERS.some(dp => dp.name === provider.name);
           let serverResult = null;
           if (
             batchData &&
@@ -753,7 +753,7 @@ export default function Home() {
             Array.isArray(batchData.results)
           ) {
             serverResult = batchData.results.find(
-              (r: any) => r.provider === (isCustom3 ? "custom" : provider.key) && r.domain === domain
+              (r: any) => r.provider === (isCustom ? "custom" : provider.key) && r.domain === domain
             );
           }
 
@@ -801,7 +801,7 @@ export default function Home() {
 
         // Finalize results for all providers for this domain
         for (const provider of userProviders) {
-          const isCustom4 = !DOH_PROVIDERS.some(dp => dp.name === provider.name);
+          const isCustom = !DOH_PROVIDERS.some(dp => dp.name === provider.name);
           let serverResult = null;
           if (
             batchData &&
@@ -809,7 +809,7 @@ export default function Home() {
             Array.isArray(batchData.results)
           ) {
             serverResult = batchData.results.find(
-              (r: any) => r.provider === (isCustom4 ? "custom" : provider.key) && r.domain === domain
+              (r: any) => r.provider === (isCustom ? "custom" : provider.key) && r.domain === domain
             );
           }
 

@@ -239,6 +239,7 @@ async function resolveClientDNS(
   domain: string,
   provider: DoHProvider
 ): Promise<ResolveDNSResult> {
+  const isCustom = !DOH_PROVIDERS.some(p => p.name === provider.name);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 2000);
 
@@ -275,7 +276,7 @@ async function resolveClientDNS(
       return {
         ...raceResult,
         method: "fallback",
-        provider: provider.name,
+        provider: isCustom ? "custom" : provider.key,
       };
     }
   } catch (e) {
@@ -288,7 +289,7 @@ async function resolveClientDNS(
     success: false,
     verified: false,
     method: "failed",
-    provider: provider.name,
+    provider: isCustom ? "custom" : provider.key,
   };
 }
 
@@ -352,10 +353,9 @@ async function resolveDNS(
   provider: DoHProvider
 ): Promise<ResolveDNSResult> {
   let serverResult: any = null;
+  const isCustom = !DOH_PROVIDERS.some(p => p.name === provider.name);
 
   try {
-    const isCustom = !DOH_PROVIDERS.some(p => p.name === provider.name);
-
     const res = await fetch(
       new URL("/api/dns-query", window.location.origin).toString(),
       {
@@ -384,7 +384,7 @@ async function resolveDNS(
       success: true,
       verified: true,
       method: serverResult.method === "server-udp" ? "server-udp" : "server-doh",
-      provider: provider.name,
+      provider: isCustom ? "custom" : provider.key,
     };
   } else {
     // Only then run client fallback
@@ -394,7 +394,7 @@ async function resolveDNS(
       return {
         ...clientResult,
         method: "fallback",
-        provider: provider.name,
+        provider: isCustom ? "custom" : provider.key,
       };
     } else {
       return {
@@ -402,7 +402,7 @@ async function resolveDNS(
         latency: null,
         verified: false,
         method: "failed",
-        provider: provider.name,
+        provider: isCustom ? "custom" : provider.key,
       };
     }
   }
