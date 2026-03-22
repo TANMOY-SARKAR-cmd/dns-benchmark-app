@@ -2006,6 +2006,7 @@ cloudflare.com"
                                 Reliability Score
                               </th>
                               <th className="px-4 py-3 font-medium">Tests</th>
+                              <th className="px-4 py-3 font-medium text-center">Stability</th>
                               <th className="px-4 py-3 font-medium">Method Stats</th>
                             </tr>
                           </thead>
@@ -2089,6 +2090,22 @@ cloudflare.com"
                                       {item.sample_count ||
                                         item.total_tests ||
                                         0}
+                                    </td>
+                                    <td className="px-4 py-3 text-center">
+                                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                        item.stability_status === 'Stable' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
+                                        item.stability_status === 'Unstable' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                                        item.stability_status === 'Unreliable' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' :
+                                        'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-400'
+                                      }`}>
+                                        <span className={`mr-1.5 h-2 w-2 rounded-full ${
+                                          item.stability_status === 'Stable' ? 'bg-green-500' :
+                                          item.stability_status === 'Unstable' ? 'bg-yellow-500' :
+                                          item.stability_status === 'Unreliable' ? 'bg-red-500' :
+                                          'bg-slate-500'
+                                        }`}></span>
+                                        {item.stability_status || 'Unknown'}
+                                      </span>
                                     </td>
                                     <td className="px-4 py-3 text-xs space-y-1">
                                       {item.udp_percentage !== undefined && (
