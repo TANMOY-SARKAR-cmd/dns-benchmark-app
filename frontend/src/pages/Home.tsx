@@ -369,6 +369,7 @@ export default function Home() {
       const { data, error } = await supabase
         .from("monitors")
         .select("*")
+        .eq("user_id", user.id)
         .order("created_at", { ascending: false });
       if (error) throw error;
       const normalizedMonitors = (data || []).map(m => ({
@@ -425,7 +426,8 @@ export default function Home() {
             providers: userProviders.map(p => p.name),
             interval_seconds: monitorInterval,
           })
-          .eq("id", editingMonitorId);
+          .eq("id", editingMonitorId)
+          .eq("user_id", user.id);
         error = updateError;
       } else {
         const { error: insertError } = await supabase.from("monitors").insert({
@@ -461,7 +463,8 @@ export default function Home() {
       const { error } = await supabase
         .from("monitors")
         .update({ is_active: !monitor.is_active })
-        .eq("id", monitor.id);
+        .eq("id", monitor.id)
+        .eq("user_id", user.id);
       if (error) throw error;
 
       fetchMonitors();
@@ -479,7 +482,7 @@ export default function Home() {
   const handleDeleteMonitor = async (id: string) => {
     if (!user) return;
     try {
-      const { error } = await supabase.from("monitors").delete().eq("id", id);
+      const { error } = await supabase.from("monitors").delete().eq("id", id).eq("user_id", user.id);
       if (error) throw error;
 
       toast.success("Monitor deleted");
