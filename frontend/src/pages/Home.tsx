@@ -178,6 +178,7 @@ export default function Home() {
         setUserProviders([
           ...DOH_PROVIDERS,
           {
+            key: "custom",
             name: data.custom_dns_name,
             url: data.custom_dns_url,
             color: "#8b5cf6",
@@ -258,10 +259,11 @@ export default function Home() {
                 const provider = userProviders.find((p: any) => p.name === providerName) || DOH_PROVIDERS.find((p: any) => p.name === providerName);
                 if (!provider) continue;
 
+                const isCustom1 = !DOH_PROVIDERS.some((dp: any) => dp.name === provider.name);
                 let serverResult = null;
                 if (batchData && batchData.results && Array.isArray(batchData.results)) {
                   serverResult = batchData.results.find(
-                    (r: any) => r.provider === (isCustom ? "custom" : provider.key) && r.domain === domain
+                    (r: any) => r.provider === (isCustom1 ? "custom" : provider.key) && r.domain === domain
                   );
                 }
 
@@ -303,10 +305,11 @@ export default function Home() {
                 const provider = userProviders.find((p: any) => p.name === providerName) || DOH_PROVIDERS.find((p: any) => p.name === providerName);
                 if (!provider) continue;
 
+                const isCustom2 = !DOH_PROVIDERS.some((dp: any) => dp.name === provider.name);
                 let serverResult = null;
                 if (batchData && batchData.results && Array.isArray(batchData.results)) {
                   serverResult = batchData.results.find(
-                    (r: any) => r.provider === (isCustom ? "custom" : provider.key) && r.domain === domain
+                    (r: any) => r.provider === (isCustom2 ? "custom" : provider.key) && r.domain === domain
                   );
                 }
 
@@ -395,7 +398,12 @@ export default function Home() {
 
   const handleCreateMonitor = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user) {
+      toast.error("Login required", {
+        description: "You must be logged in to use monitoring.",
+      });
+      return;
+    }
 
     const VALID_DOMAIN_PATTERN =
       /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
@@ -459,6 +467,12 @@ export default function Home() {
   };
 
   const toggleMonitor = async (monitor: any) => {
+    if (!user) {
+      toast.error("Login required", {
+        description: "You must be logged in to use monitoring.",
+      });
+      return;
+    }
     try {
       const { error } = await supabase
         .from("monitors")
@@ -480,7 +494,12 @@ export default function Home() {
   };
 
   const handleDeleteMonitor = async (id: string) => {
-    if (!user) return;
+    if (!user) {
+      toast.error("Login required", {
+        description: "You must be logged in to use monitoring.",
+      });
+      return;
+    }
     try {
       const { error } = await supabase.from("monitors").delete().eq("id", id).eq("user_id", user.id);
       if (error) throw error;
@@ -726,6 +745,7 @@ export default function Home() {
 
         // First pass: identify server successes and failed providers
         for (const provider of userProviders) {
+          const isCustom3 = !DOH_PROVIDERS.some(dp => dp.name === provider.name);
           let serverResult = null;
           if (
             batchData &&
@@ -733,7 +753,7 @@ export default function Home() {
             Array.isArray(batchData.results)
           ) {
             serverResult = batchData.results.find(
-              (r: any) => r.provider === (isCustom ? "custom" : provider.key) && r.domain === domain
+              (r: any) => r.provider === (isCustom3 ? "custom" : provider.key) && r.domain === domain
             );
           }
 
@@ -781,6 +801,7 @@ export default function Home() {
 
         // Finalize results for all providers for this domain
         for (const provider of userProviders) {
+          const isCustom4 = !DOH_PROVIDERS.some(dp => dp.name === provider.name);
           let serverResult = null;
           if (
             batchData &&
@@ -788,7 +809,7 @@ export default function Home() {
             Array.isArray(batchData.results)
           ) {
             serverResult = batchData.results.find(
-              (r: any) => r.provider === (isCustom ? "custom" : provider.key) && r.domain === domain
+              (r: any) => r.provider === (isCustom4 ? "custom" : provider.key) && r.domain === domain
             );
           }
 
@@ -1870,6 +1891,12 @@ cloudflare.com"
                       <div className="flex justify-end mt-2">
                         <Button
                           onClick={async () => {
+                            if (!user) {
+                              toast.error("Login required", {
+        description: "You must be logged in to save settings.",
+      });
+                              return;
+                            }
                             const { error } = await supabase
                               .from("user_preferences")
                               .upsert(
@@ -1888,6 +1915,7 @@ cloudflare.com"
                                 setUserProviders([
                                   ...DOH_PROVIDERS,
                                   {
+                                    key: "custom",
                                     name: customName,
                                     url: customUrl,
                                     color: "#8b5cf6",
