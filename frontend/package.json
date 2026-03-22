@@ -2,7 +2,9 @@
   "name": "frontend",
   "version": "1.0.0",
   "scripts": {
-    "build": "vite build"
+    "build": "vite build",
+    "dev": "vite",
+    "preview": "vite preview"
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.15",
