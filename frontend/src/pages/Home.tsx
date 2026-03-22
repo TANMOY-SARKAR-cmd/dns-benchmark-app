@@ -77,83 +77,18 @@ export default function Home() {
   const [userProviders, setUserProviders] = useState<typeof DOH_PROVIDERS>([
     ...DOH_PROVIDERS,
   ]);
-  const [isGlobalMonitoring, setIsGlobalMonitoring] = useState(false);
-  const isGlobalMonitoringRef = useRef(isGlobalMonitoring);
-  useEffect(() => {
-    isGlobalMonitoringRef.current = isGlobalMonitoring;
-  }, [isGlobalMonitoring]);
 
-  useEffect(() => {
-    if (!isGlobalMonitoring) return;
-
-    let intervalId: NodeJS.Timeout;
-
-    const runGlobalMonitoring = async () => {
-      if (!isGlobalMonitoringRef.current || !user || !isSupabaseConfigured)
-        return;
-
-      try {
-        const { data: monitors, error: fetchError } = await supabase
-          .from("monitors")
-          .select("*")
-          .eq("is_active", true);
-
-        if (fetchError || !monitors || monitors.length === 0) return;
-
-        for (const monitor of monitors) {
-          if (!isGlobalMonitoringRef.current) break;
-
-          const domains = monitor.domains || [];
-          const providerNames = monitor.providers || [];
-
-          if (domains.length === 0 || providerNames.length === 0) continue;
-
-          for (const pName of providerNames) {
-            const provider = userProviders.find((p: any) => p.name === pName);
-            if (!provider) continue;
-
-            const results = await measureDoHBatch(domains, provider, 1);
-
-            const resultsToInsert = Object.entries(results).map(
-              ([domain, res]: [string, any]) => ({
-                monitor_id: monitor.id,
-                user_id: user.id,
-                domain,
-                provider: provider.name,
-                latency_ms: res.successRate > 0 ? res.avgLatency : null,
-                success: res.successRate > 0,
-                method: res.method,
-                error: res.successRate === 0 ? "Timeout" : null,
-                tested_at: new Date().toISOString(),
-              })
-            );
-
-            if (resultsToInsert.length > 0) {
-              await supabase.from("monitor_results").insert(resultsToInsert);
-            }
-          }
-        }
-      } catch (err) {
-        console.error("Global monitoring error:", err);
-      }
-    };
-
-    runGlobalMonitoring();
-    intervalId = setInterval(runGlobalMonitoring, 30000);
-
-    return () => clearInterval(intervalId);
-  }, [isGlobalMonitoring, user, userProviders]);
   const [history, setHistory] = useState<any[]>([]);
   const [liveLogs, setLiveLogs] = useState<any[]>([]);
   const [session, setSession] = useState<any>(null);
 
   // Monitors
   const [monitors, setMonitors] = useState<any[]>([]);
+  const [monitorResults, setMonitorResults] = useState<Record<string, any>>({});
   const [editingMonitorId, setEditingMonitorId] = useState<string | null>(null);
   const [monitorDomains, setMonitorDomains] = useState("");
   const [monitorInterval, setMonitorInterval] = useState(60);
   const [isCreatingMonitor, setIsCreatingMonitor] = useState(false);
-  const [lastChecked, setLastChecked] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -185,6 +120,21 @@ export default function Home() {
     // Subscribe to live logs
     const channel = sb
       .channel("dns_queries")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "monitor_results",
+        },
+        payload => {
+          setMonitorResults(prev => ({
+            ...prev,
+            [payload.new.monitor_id]: payload.new
+          }));
+        }
+      )
+
       .on(
         "postgres_changes",
         {
@@ -265,146 +215,7 @@ export default function Home() {
     }
   };
 
-  const activeIntervals = useRef<
-    Map<
-      string,
-      {
-        id: NodeJS.Timeout;
-        interval: number;
-        domainsStr: string;
-        providersStr: string;
-      }
-    >
-  >(new Map());
 
-  useEffect(() => {
-    if (!user) {
-      Array.from(activeIntervals.current.values()).forEach(item =>
-        clearInterval(item.id)
-      );
-      activeIntervals.current.clear();
-      return;
-    }
-
-    const activeMonitorIds = new Set<string>();
-
-    monitors.forEach(monitor => {
-      if (monitor.is_active) {
-        activeMonitorIds.add(monitor.id);
-        const currentSetup = activeIntervals.current.get(monitor.id);
-
-        const monitorDomainsStr = (
-          Array.isArray(monitor.domains) ? monitor.domains : []
-        ).join(",");
-        const monitorProvidersStr = (
-          Array.isArray(monitor.providers) ? monitor.providers : []
-        ).join(",");
-        if (
-          !currentSetup ||
-          currentSetup.interval !== monitor.interval_seconds ||
-          currentSetup.domainsStr !== monitorDomainsStr ||
-          currentSetup.providersStr !== monitorProvidersStr
-        ) {
-          if (currentSetup) clearInterval(currentSetup.id);
-
-          const runTest = async () => {
-            if (
-              !monitor.domains ||
-              !monitor.providers ||
-              monitor.domains.length === 0 ||
-              monitor.providers.length === 0
-            )
-              return;
-            const providers = userProviders.filter(p =>
-              monitor.providers.includes(p.name)
-            );
-            if (providers.length === 0) return;
-
-            const results: any[] = [];
-            for (const domain of monitor.domains) {
-              for (const provider of providers) {
-                try {
-                  const result = await measureDoH(provider, domain);
-                  results.push({
-                    user_id: user.id,
-                    monitor_id: monitor.id,
-                    domain,
-                    provider: provider.name,
-                    latency_ms:
-                      result.successRate > 0 ? result.avgLatency : null,
-                    success: result.successRate > 0,
-                    method: result.method,
-                    error: null,
-                    tested_at: new Date().toISOString(),
-                  });
-                } catch (e) {
-                  results.push({
-                    user_id: user.id,
-                    monitor_id: monitor.id,
-                    domain,
-                    provider: provider.name,
-                    latency_ms: null,
-                    success: false,
-                    method: "failed",
-                    error: e instanceof Error ? e.message : String(e),
-                    tested_at: new Date().toISOString(),
-                  });
-                }
-              }
-            }
-            if (results.length > 0) {
-              await supabase.from("monitor_results").insert(results);
-            }
-
-            setLastChecked(prev => ({
-              ...prev,
-              [monitor.id]: new Date().toLocaleTimeString(),
-            }));
-
-            await supabase
-              .from("monitors")
-              .update({
-                last_run_at: new Date().toISOString(),
-                next_run_at: new Date(
-                  Date.now() + monitor.interval_seconds * 1000
-                ).toISOString(),
-              })
-              .eq("id", monitor.id);
-          };
-
-          if (!currentSetup) {
-            runTest();
-          }
-
-          const intervalId = setInterval(
-            runTest,
-            monitor.interval_seconds * 1000
-          );
-          activeIntervals.current.set(monitor.id, {
-            id: intervalId,
-            interval: monitor.interval_seconds,
-            domainsStr: monitorDomainsStr,
-            providersStr: monitorProvidersStr,
-          });
-        }
-      }
-    });
-
-    Array.from(activeIntervals.current.keys()).forEach(id => {
-      if (!activeMonitorIds.has(id)) {
-        clearInterval(activeIntervals.current.get(id)!.id);
-        activeIntervals.current.delete(id);
-      }
-    });
-  }, [monitors, user]);
-
-  useEffect(() => {
-    return () => {
-      Array.from(activeIntervals.current.values()).forEach(item =>
-        clearInterval(item.id)
-      );
-    };
-  }, []);
 
   const handleCreateMonitor = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1365,15 +1176,15 @@ cloudflare.com"
                                   </div>
                                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                                     <History className="w-4 h-4" />
-                                    <span>
-                                      Last run:{" "}
-                                      {lastChecked[monitor.id] ||
-                                        (monitor.last_run_at
-                                          ? new Date(
-                                              monitor.last_run_at
-                                            ).toLocaleTimeString()
-                                          : "Never")}
-                                    </span>
+                                    <span className={monitor.is_active ? "text-green-500 font-medium" : "text-slate-500"}>
+{monitor.is_active ? "Active" : "Stopped"}
+</span>
+{monitorResults[monitor.id] && (
+  <span className="ml-2 text-xs flex items-center gap-1">
+    | {monitorResults[monitor.id].success ? <span className="text-green-500">Success</span> : <span className="text-red-500">Failed</span>}
+    | <span className="uppercase text-slate-500">{monitorResults[monitor.id].method}</span>
+  </span>
+)}
                                   </div>
                                 </div>
                                 <Button
@@ -1912,32 +1723,7 @@ cloudflare.com"
                       </p>
                     </div>
                     <div className="pt-6 border-t dark:border-slate-800">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="text-sm font-medium">
-                            Global Monitoring
-                          </h3>
-                          <p className="text-xs text-slate-500">
-                            Automatically test top domains every 30 seconds
-                          </p>
-                        </div>
-                        <Button
-                          variant={
-                            isGlobalMonitoring ? "destructive" : "default"
-                          }
-                          onClick={() => {
-                            if (!isGlobalMonitoring) {
-                              toast.success("Global monitoring started");
-                              setIsGlobalMonitoring(true);
-                            } else {
-                              toast.info("Global monitoring stopped");
-                              setIsGlobalMonitoring(false);
-                            }
-                          }}
-                        >
-                          {isGlobalMonitoring ? "Stop" : "Start"}
-                        </Button>
-                      </div>
+
                     </div>
                   </div>
                 )}
