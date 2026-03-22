@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -9,7 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { Github, CheckCircle2 } from "lucide-react";
+import { Github, CheckCircle2, Mail, Trash2 } from "lucide-react";
 import { DiscordLogoIcon } from "@radix-ui/react-icons";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -24,27 +25,27 @@ export function ManageAccountsDialog({
 }: ManageAccountsDialogProps) {
   const { user } = useAuth();
   const [isLoading, setIsLoading] = useState<string | null>(null);
+  const [emailToLink, setEmailToLink] = useState("");
 
   if (!user) return null;
 
   // The identities array from the user object
   const identities = user.identities || [];
+  const totalIdentities = identities.length;
 
   // Check which providers are already linked
-  const hasProvider = (providerName: string) => {
-    return identities.some(identity => identity.provider === providerName);
+  const getProviderIdentity = (providerName: string) => {
+    return identities.find((identity: any) => identity.provider === providerName);
   };
 
-  const isGithubLinked = hasProvider("github");
-  const isDiscordLinked = hasProvider("discord");
-  const isGitlabLinked = hasProvider("gitlab");
-
-  // Custom logic for Web3 if needed, assuming the provider name is 'ethereum' or similar
+  const githubIdentity = getProviderIdentity("github");
+  const discordIdentity = getProviderIdentity("discord");
+  const emailIdentity = getProviderIdentity("email");
   // Adjust based on how Supabase represents Web3 identities
-  const isWeb3Linked = hasProvider("ethereum");
+  const web3Identity = getProviderIdentity("ethereum");
 
   const handleLinkProvider = async (
-    provider: "github" | "discord" | "gitlab"
+    provider: "github" | "discord"
   ) => {
     setIsLoading(provider);
     try {
@@ -60,6 +61,32 @@ export function ManageAccountsDialog({
         console.error("Link identity error:", error);
       } else {
         // Redirection should happen
+      }
+    } catch (error) {
+      toast.error("An unexpected error occurred");
+      console.error(error);
+    } finally {
+      setIsLoading(null);
+    }
+  };
+
+  const handleLinkEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!emailToLink) {
+      toast.error("Please enter an email");
+      return;
+    }
+
+    setIsLoading("email");
+    try {
+      const { error } = await supabase.auth.updateUser({ email: emailToLink });
+
+      if (error) {
+        toast.error(error.message);
+        console.error("Link identity error:", error);
+      } else {
+        toast.success("Check your email for the confirmation link to complete linking!");
+        setEmailToLink("");
       }
     } catch (error) {
       toast.error("An unexpected error occurred");
@@ -93,6 +120,30 @@ export function ManageAccountsDialog({
     }
   };
 
+  const handleUnlinkProvider = async (identity: any, provider: string) => {
+    if (totalIdentities <= 1) {
+      toast.error("You cannot unlink your only remaining login method.");
+      return;
+    }
+
+    setIsLoading(`unlink-${provider}`);
+    try {
+      const { error } = await supabase.auth.unlinkIdentity(identity);
+
+      if (error) {
+        toast.error(error.message);
+        console.error("Unlink identity error:", error);
+      } else {
+        toast.success(`Successfully unlinked ${provider}`);
+      }
+    } catch (error) {
+      toast.error("An unexpected error occurred");
+      console.error(error);
+    } finally {
+      setIsLoading(null);
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -111,10 +162,22 @@ export function ManageAccountsDialog({
                 <Github className="w-5 h-5 text-slate-700 dark:text-slate-300" />
                 <span className="font-medium text-sm">GitHub</span>
               </div>
-              {isGithubLinked ? (
-                <div className="flex items-center gap-1.5 text-xs font-medium text-green-600 dark:text-green-500 bg-green-50 dark:bg-green-950/30 px-2 py-1 rounded-full">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  connected
+              {githubIdentity ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-green-600 dark:text-green-500 bg-green-50 dark:bg-green-950/30 px-2 py-1 rounded-full">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    connected
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-slate-500 hover:text-red-500"
+                    onClick={() => handleUnlinkProvider(githubIdentity, "GitHub")}
+                    disabled={!!isLoading || totalIdentities <= 1}
+                    title="Unlink GitHub"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
                 </div>
               ) : (
                 <Button
@@ -135,10 +198,22 @@ export function ManageAccountsDialog({
                 <DiscordLogoIcon className="w-5 h-5 text-[#5865F2]" />
                 <span className="font-medium text-sm">Discord</span>
               </div>
-              {isDiscordLinked ? (
-                <div className="flex items-center gap-1.5 text-xs font-medium text-green-600 dark:text-green-500 bg-green-50 dark:bg-green-950/30 px-2 py-1 rounded-full">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  connected
+              {discordIdentity ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-green-600 dark:text-green-500 bg-green-50 dark:bg-green-950/30 px-2 py-1 rounded-full">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    connected
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-slate-500 hover:text-red-500"
+                    onClick={() => handleUnlinkProvider(discordIdentity, "Discord")}
+                    disabled={!!isLoading || totalIdentities <= 1}
+                    title="Unlink Discord"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
                 </div>
               ) : (
                 <Button
@@ -153,53 +228,50 @@ export function ManageAccountsDialog({
               )}
             </div>
 
-            {/* GitLab */}
+            {/* Email */}
             <div className="flex items-center justify-between p-3 border rounded-lg bg-card">
               <div className="flex items-center gap-3">
-                <svg
-                  viewBox="0 0 24 24"
-                  className="w-5 h-5"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path
-                    d="M23.955 13.587l-2.286-7.03a1.534 1.534 0 00-2.91 0l-1.464 4.502H6.705L5.24 6.557a1.534 1.534 0 00-2.91 0l-2.286 7.03c-.22.673-.027 1.417.498 1.888l11.458 8.64a.765.765 0 00.902 0l11.458-8.64c.525-.47.717-1.215.498-1.888z"
-                    fill="#FC6D26"
-                  />
-                  <path
-                    d="M12 24.116L24.455 15.48h-8.214L12 24.116z"
-                    fill="#E24329"
-                  />
-                  <path
-                    d="M12 24.116L-.455 15.48h8.214L12 24.116z"
-                    fill="#E24329"
-                  />
-                  <path
-                    d="M6.705 11.06H1.465l1.91-5.877c.22-.676 1.157-.676 1.378 0l1.952 5.877z"
-                    fill="#FCA326"
-                  />
-                  <path
-                    d="M17.295 11.06h5.24l-1.91-5.877c-.22-.676-1.157-.676-1.378 0l-1.952 5.877z"
-                    fill="#FCA326"
-                  />
-                </svg>
-                <span className="font-medium text-sm">GitLab</span>
+                <Mail className="w-5 h-5 text-slate-700 dark:text-slate-300" />
+                <span className="font-medium text-sm">Email</span>
               </div>
-              {isGitlabLinked ? (
-                <div className="flex items-center gap-1.5 text-xs font-medium text-green-600 dark:text-green-500 bg-green-50 dark:bg-green-950/30 px-2 py-1 rounded-full">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  connected
+              {emailIdentity ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-green-600 dark:text-green-500 bg-green-50 dark:bg-green-950/30 px-2 py-1 rounded-full">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    {emailIdentity.identity_data?.email || "connected"}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-slate-500 hover:text-red-500"
+                    onClick={() => handleUnlinkProvider(emailIdentity, "Email")}
+                    disabled={!!isLoading || totalIdentities <= 1}
+                    title="Unlink Email"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
                 </div>
               ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 gap-2 text-xs"
-                  onClick={() => handleLinkProvider("gitlab")}
-                  disabled={!!isLoading}
-                >
-                  {isLoading === "gitlab" ? "Linking..." : "Link"}
-                </Button>
+                <form onSubmit={handleLinkEmail} className="flex gap-2">
+                  <Input
+                    type="email"
+                    placeholder="name@example.com"
+                    value={emailToLink}
+                    onChange={(e) => setEmailToLink(e.target.value)}
+                    disabled={!!isLoading}
+                    required
+                    className="h-8 text-xs w-[140px]"
+                  />
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-2 text-xs shrink-0"
+                    disabled={!!isLoading}
+                  >
+                    {isLoading === "email" ? "Linking..." : "Link"}
+                  </Button>
+                </form>
               )}
             </div>
 
@@ -220,10 +292,22 @@ export function ManageAccountsDialog({
                 </div>
                 <span className="font-medium text-sm">Web3 Wallet</span>
               </div>
-              {isWeb3Linked ? (
-                <div className="flex items-center gap-1.5 text-xs font-medium text-green-600 dark:text-green-500 bg-green-50 dark:bg-green-950/30 px-2 py-1 rounded-full">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  connected
+              {web3Identity ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-green-600 dark:text-green-500 bg-green-50 dark:bg-green-950/30 px-2 py-1 rounded-full">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    connected
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-slate-500 hover:text-red-500"
+                    onClick={() => handleUnlinkProvider(web3Identity, "Web3 Wallet")}
+                    disabled={!!isLoading || totalIdentities <= 1}
+                    title="Unlink Web3 Wallet"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
                 </div>
               ) : (
                 <Button

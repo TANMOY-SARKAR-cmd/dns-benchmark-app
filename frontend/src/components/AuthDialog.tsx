@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -10,15 +11,16 @@ import {
 } from "@/components/ui/dialog";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { LogIn, Github } from "lucide-react";
+import { LogIn, Github, Mail } from "lucide-react";
 import { DiscordLogoIcon } from "@radix-ui/react-icons";
 
 export function AuthDialog() {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
 
   const handleOAuthLogin = async (
-    provider: "github" | "discord" | "gitlab"
+    provider: "github" | "discord"
   ) => {
     setIsLoading(provider);
     try {
@@ -32,6 +34,37 @@ export function AuthDialog() {
       if (error) {
         toast.error(error.message);
         console.error("Auth error:", error);
+      }
+    } catch (error) {
+      toast.error("An unexpected error occurred");
+      console.error(error);
+    } finally {
+      setIsLoading(null);
+    }
+  };
+
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) {
+      toast.error("Please enter your email");
+      return;
+    }
+
+    setIsLoading("email");
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: window.location.origin,
+        },
+      });
+
+      if (error) {
+        toast.error(error.message);
+        console.error("Auth error:", error);
+      } else {
+        toast.success("Check your email for the login link!");
+        setIsOpen(false);
       }
     } catch (error) {
       toast.error("An unexpected error occurred");
@@ -66,6 +99,7 @@ export function AuthDialog() {
       open={isOpen}
       onOpenChange={open => {
         setIsOpen(open);
+        if (!open) setEmail("");
       }}
     >
       <DialogTrigger asChild>
@@ -82,7 +116,35 @@ export function AuthDialog() {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3 py-4">
+        <div className="space-y-4 py-4">
+          <form onSubmit={handleEmailLogin} className="space-y-2">
+            <div className="flex gap-2">
+              <Input
+                type="email"
+                placeholder="name@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={!!isLoading}
+                required
+              />
+              <Button type="submit" disabled={!!isLoading} className="gap-2 shrink-0">
+                <Mail className="w-4 h-4" />
+                {isLoading === "email" ? "Sending..." : "Email Link"}
+              </Button>
+            </div>
+          </form>
+
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">
+                Or continue with
+              </span>
+            </div>
+          </div>
+
           <Button
             variant="outline"
             type="button"
@@ -109,47 +171,6 @@ export function AuthDialog() {
             <DiscordLogoIcon className="w-5 h-5 text-[#5865F2]" />
             <span className="flex-1 text-left">Continue with Discord</span>
             {isLoading === "discord" && (
-              <span className="text-xs">Loading...</span>
-            )}
-          </Button>
-
-          <Button
-            variant="outline"
-            type="button"
-            size="lg"
-            disabled={!!isLoading}
-            onClick={() => handleOAuthLogin("gitlab")}
-            className="w-full justify-start gap-3 px-4"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              className="w-5 h-5"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M23.955 13.587l-2.286-7.03a1.534 1.534 0 00-2.91 0l-1.464 4.502H6.705L5.24 6.557a1.534 1.534 0 00-2.91 0l-2.286 7.03c-.22.673-.027 1.417.498 1.888l11.458 8.64a.765.765 0 00.902 0l11.458-8.64c.525-.47.717-1.215.498-1.888z"
-                fill="#FC6D26"
-              />
-              <path
-                d="M12 24.116L24.455 15.48h-8.214L12 24.116z"
-                fill="#E24329"
-              />
-              <path
-                d="M12 24.116L-.455 15.48h8.214L12 24.116z"
-                fill="#E24329"
-              />
-              <path
-                d="M6.705 11.06H1.465l1.91-5.877c.22-.676 1.157-.676 1.378 0l1.952 5.877z"
-                fill="#FCA326"
-              />
-              <path
-                d="M17.295 11.06h5.24l-1.91-5.877c-.22-.676-1.157-.676-1.378 0l-1.952 5.877z"
-                fill="#FCA326"
-              />
-            </svg>
-            <span className="flex-1 text-left">Continue with GitLab</span>
-            {isLoading === "gitlab" && (
               <span className="text-xs">Loading...</span>
             )}
           </Button>
