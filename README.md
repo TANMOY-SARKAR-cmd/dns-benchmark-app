@@ -56,8 +56,8 @@ _(Placeholder for screenshots - Add screenshots of the benchmark interface, lead
 ### 1. Supabase Setup
 
 1. Create a new Supabase project.
-2. Run the SQL script located at `updated-supabase-schema.sql` in your Supabase SQL Editor.
-3. Get your Project URL and Anon Key.
+2. Run the full database schema located at [`updated-supabase-schema.sql`](./updated-supabase-schema.sql) in your Supabase SQL Editor to set up all tables, indexes, and RLS policies.
+3. Get your Project URL and Anon Key from the Supabase dashboard.
 
 ### 2. Environment Variables
 
