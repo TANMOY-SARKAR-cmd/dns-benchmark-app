@@ -85,6 +85,10 @@ CREATE TABLE public.leaderboard (
   sample_count integer,
   score double precision,
   reliability_score double precision,
+  udp_percentage double precision DEFAULT 0,
+  doh_percentage double precision DEFAULT 0,
+  fallback_percentage double precision DEFAULT 0,
+  failure_percentage double precision DEFAULT 0,
   last_updated timestamp with time zone DEFAULT now()
 );
 
@@ -196,15 +200,15 @@ BEGIN
     DELETE FROM leaderboard;
 
     WITH combined_results AS (
-        SELECT provider, latency_ms, success, tested_at
+        SELECT provider, latency_ms, success, method, tested_at
         FROM benchmark_results
         WHERE tested_at >= NOW() - INTERVAL '30 days'
         UNION ALL
-        SELECT provider, latency_ms, success, tested_at
+        SELECT provider, latency_ms, success, method, tested_at
         FROM monitor_results
         WHERE tested_at >= NOW() - INTERVAL '30 days'
     )
-    INSERT INTO leaderboard (provider, avg_latency, success_rate, sample_count, score, last_updated)
+    INSERT INTO leaderboard (provider, avg_latency, success_rate, sample_count, score, udp_percentage, doh_percentage, fallback_percentage, failure_percentage, last_updated)
     SELECT
         provider,
         AVG(latency_ms) FILTER (WHERE success = true) as avg_latency,
@@ -215,6 +219,10 @@ BEGIN
             ((1.0 / NULLIF(AVG(latency_ms) FILTER (WHERE success = true), 0)) * 0.3) +
             (LOG(COUNT(*) + 1) * 0.2)
         ) as score,
+        SUM(CASE WHEN method = 'server-udp' THEN 1 ELSE 0 END)::FLOAT / COUNT(*) * 100 as udp_percentage,
+        SUM(CASE WHEN method = 'server-doh' THEN 1 ELSE 0 END)::FLOAT / COUNT(*) * 100 as doh_percentage,
+        SUM(CASE WHEN method = 'fallback' THEN 1 ELSE 0 END)::FLOAT / COUNT(*) * 100 as fallback_percentage,
+        SUM(CASE WHEN method = 'failed' OR success = false THEN 1 ELSE 0 END)::FLOAT / COUNT(*) * 100 as failure_percentage,
         NOW() as last_updated
     FROM combined_results
     GROUP BY provider;
