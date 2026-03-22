@@ -1,6 +1,7 @@
 import dnsPacket from "dns-packet";
 
 export type DoHProvider = {
+  key: string;
   name: string;
   url: string;
   color: string;
@@ -9,30 +10,35 @@ export type DoHProvider = {
 
 export const DOH_PROVIDERS: DoHProvider[] = [
   {
+    key: "cloudflare",
     name: "Cloudflare",
     url: "https://cloudflare-dns.com/dns-query",
     color: "#f58220",
     format: "binary",
   },
   {
+    key: "google",
     name: "Google",
     url: "https://dns.google/resolve",
     color: "#4285f4",
     format: "json",
   },
   {
+    key: "quad9",
     name: "Quad9",
     url: "https://dns9.quad9.net:5053/dns-query",
     color: "#9b2226",
     format: "binary",
   },
   {
+    key: "adguard",
     name: "AdGuard",
     url: "https://dns.adguard-dns.com/dns-query",
     color: "#1bd185",
     format: "binary",
   },
   {
+    key: "opendns",
     name: "OpenDNS",
     url: "https://doh.opendns.com/dns-query",
     color: "#0053a0",
@@ -357,7 +363,7 @@ async function resolveDNS(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           domain,
-          provider: isCustom ? "custom" : provider.name,
+          provider: isCustom ? "custom" : provider.key,
           customUrl: isCustom ? provider.url : undefined,
         }),
       }
@@ -415,7 +421,7 @@ export async function measureDoHBatch(
     for (const domain of domains) {
       allQueries.push({
         domain,
-        provider: isCustom ? "custom" : provider.name,
+        provider: isCustom ? "custom" : provider.key,
         ...(isCustom ? { customUrl: provider.url } : {}),
       } as any);
     }

@@ -227,7 +227,7 @@ export default function Home() {
                 const isCustom = !DOH_PROVIDERS.some((dp: any) => dp.name === provider.name);
                 queries.push({
                   domain,
-                  provider: isCustom ? "custom" : provider.name,
+                  provider: isCustom ? "custom" : provider.key,
                   customUrl: isCustom ? provider.url : undefined,
                 });
               }
@@ -261,7 +261,7 @@ export default function Home() {
                 let serverResult = null;
                 if (batchData && batchData.results && Array.isArray(batchData.results)) {
                   serverResult = batchData.results.find(
-                    (r: any) => r.provider === provider.name && r.domain === domain
+                    (r: any) => r.provider === (isCustom ? "custom" : provider.key) && r.domain === domain
                   );
                 }
 
@@ -306,7 +306,7 @@ export default function Home() {
                 let serverResult = null;
                 if (batchData && batchData.results && Array.isArray(batchData.results)) {
                   serverResult = batchData.results.find(
-                    (r: any) => r.provider === provider.name && r.domain === domain
+                    (r: any) => r.provider === (isCustom ? "custom" : provider.key) && r.domain === domain
                   );
                 }
 
@@ -733,7 +733,7 @@ export default function Home() {
             Array.isArray(batchData.results)
           ) {
             serverResult = batchData.results.find(
-              (r: any) => r.provider === provider.name && r.domain === domain
+              (r: any) => r.provider === (isCustom ? "custom" : provider.key) && r.domain === domain
             );
           }
 
@@ -788,7 +788,7 @@ export default function Home() {
             Array.isArray(batchData.results)
           ) {
             serverResult = batchData.results.find(
-              (r: any) => r.provider === provider.name && r.domain === domain
+              (r: any) => r.provider === (isCustom ? "custom" : provider.key) && r.domain === domain
             );
           }
 
