@@ -132,7 +132,7 @@ export default function Home() {
         payload => {
           setMonitorResults(prev => ({
             ...prev,
-            [payload.new.monitor_id]: payload.new
+            [payload.new.monitor_id]: payload.new,
           }));
         }
       )
@@ -191,7 +191,6 @@ export default function Home() {
     }
   };
 
-
   useEffect(() => {
     if (!user) return;
 
@@ -205,7 +204,12 @@ export default function Home() {
 
         // Execute immediately, then on interval
         const runMonitor = async () => {
-          if (!monitor.domains || !monitor.providers || monitor.domains.length === 0 || monitor.providers.length === 0) {
+          if (
+            !monitor.domains ||
+            !monitor.providers ||
+            monitor.domains.length === 0 ||
+            monitor.providers.length === 0
+          ) {
             return;
           }
 
@@ -222,10 +226,14 @@ export default function Home() {
             const queries: any[] = [];
             for (const domain of monitor.domains) {
               for (const providerName of monitor.providers) {
-                const provider = userProviders.find((p: any) => p.name === providerName) || DOH_PROVIDERS.find((p: any) => p.name === providerName);
+                const provider =
+                  userProviders.find((p: any) => p.name === providerName) ||
+                  DOH_PROVIDERS.find((p: any) => p.name === providerName);
                 if (!provider) continue;
 
-                const isCustom = !DOH_PROVIDERS.some((dp: any) => dp.name === provider.name);
+                const isCustom = !DOH_PROVIDERS.some(
+                  (dp: any) => dp.name === provider.name
+                );
                 queries.push({
                   domain,
                   provider: isCustom ? "custom" : provider.key,
@@ -256,14 +264,24 @@ export default function Home() {
               const failedProviders: any[] = [];
 
               for (const providerName of monitor.providers) {
-                const provider = userProviders.find((p: any) => p.name === providerName) || DOH_PROVIDERS.find((p: any) => p.name === providerName);
+                const provider =
+                  userProviders.find((p: any) => p.name === providerName) ||
+                  DOH_PROVIDERS.find((p: any) => p.name === providerName);
                 if (!provider) continue;
 
-                const isCustom = !DOH_PROVIDERS.some((dp: any) => dp.name === provider.name);
+                const isCustom = !DOH_PROVIDERS.some(
+                  (dp: any) => dp.name === provider.name
+                );
                 let serverResult = null;
-                if (batchData && batchData.results && Array.isArray(batchData.results)) {
+                if (
+                  batchData &&
+                  batchData.results &&
+                  Array.isArray(batchData.results)
+                ) {
                   serverResult = batchData.results.find(
-                    (r: any) => r.provider === (isCustom ? "custom" : provider.key) && r.domain === domain
+                    (r: any) =>
+                      r.provider === (isCustom ? "custom" : provider.key) &&
+                      r.domain === domain
                   );
                 }
 
@@ -287,7 +305,10 @@ export default function Home() {
                 const fallbackResults = await Promise.all(
                   failedProviders.map(async provider => {
                     try {
-                      const fallbackResult = await measureClientDoH(provider, domain);
+                      const fallbackResult = await measureClientDoH(
+                        provider,
+                        domain
+                      );
                       return { provider, result: fallbackResult };
                     } catch (error) {
                       return { provider, result: "Error" as const };
@@ -302,14 +323,24 @@ export default function Home() {
 
               // Finalize results for all providers for this domain
               for (const providerName of monitor.providers) {
-                const provider = userProviders.find((p: any) => p.name === providerName) || DOH_PROVIDERS.find((p: any) => p.name === providerName);
+                const provider =
+                  userProviders.find((p: any) => p.name === providerName) ||
+                  DOH_PROVIDERS.find((p: any) => p.name === providerName);
                 if (!provider) continue;
 
-                const isCustom = !DOH_PROVIDERS.some((dp: any) => dp.name === provider.name);
+                const isCustom = !DOH_PROVIDERS.some(
+                  (dp: any) => dp.name === provider.name
+                );
                 let serverResult = null;
-                if (batchData && batchData.results && Array.isArray(batchData.results)) {
+                if (
+                  batchData &&
+                  batchData.results &&
+                  Array.isArray(batchData.results)
+                ) {
                   serverResult = batchData.results.find(
-                    (r: any) => r.provider === (isCustom ? "custom" : provider.key) && r.domain === domain
+                    (r: any) =>
+                      r.provider === (isCustom ? "custom" : provider.key) &&
+                      r.domain === domain
                   );
                 }
 
@@ -319,8 +350,12 @@ export default function Home() {
                 let final_method = "failed";
                 let final_latency = null;
 
-                const serverSuccess = serverResult && serverResult.success === true;
-                const clientSuccess = clientResult && clientResult !== "Error" && clientResult.successRate > 0;
+                const serverSuccess =
+                  serverResult && serverResult.success === true;
+                const clientSuccess =
+                  clientResult &&
+                  clientResult !== "Error" &&
+                  clientResult.successRate > 0;
 
                 if (serverSuccess) {
                   final_success = true;
@@ -342,13 +377,15 @@ export default function Home() {
                   error: final_success ? null : "Failed to resolve",
                   tested_at: testedAt,
                   keep_forever: false,
-                  monitor_id: monitor.id
+                  monitor_id: monitor.id,
                 });
               }
             }
 
             if (payload.length > 0) {
-              await supabase.from("monitor_results").insert(payload.map(({ monitor_id, ...rest }) => rest)); // Strictly omitting monitor_id to adhere to required schema
+              await supabase
+                .from("monitor_results")
+                .insert(payload.map(({ monitor_id, ...rest }) => rest)); // Strictly omitting monitor_id to adhere to required schema
             }
           } catch (e) {
             console.error("Monitor execution failed for", monitor.id, e);
@@ -393,8 +430,6 @@ export default function Home() {
       console.error("Monitors fetch error:", e);
     }
   };
-
-
 
   const handleCreateMonitor = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -501,7 +536,11 @@ export default function Home() {
       return;
     }
     try {
-      const { error } = await supabase.from("monitors").delete().eq("id", id).eq("user_id", user.id);
+      const { error } = await supabase
+        .from("monitors")
+        .delete()
+        .eq("id", id)
+        .eq("user_id", user.id);
       if (error) throw error;
 
       toast.success("Monitor deleted");
@@ -753,7 +792,9 @@ export default function Home() {
             Array.isArray(batchData.results)
           ) {
             serverResult = batchData.results.find(
-              (r: any) => r.provider === (isCustom ? "custom" : provider.key) && r.domain === domain
+              (r: any) =>
+                r.provider === (isCustom ? "custom" : provider.key) &&
+                r.domain === domain
             );
           }
 
@@ -809,7 +850,9 @@ export default function Home() {
             Array.isArray(batchData.results)
           ) {
             serverResult = batchData.results.find(
-              (r: any) => r.provider === (isCustom ? "custom" : provider.key) && r.domain === domain
+              (r: any) =>
+                r.provider === (isCustom ? "custom" : provider.key) &&
+                r.domain === domain
             );
           }
 
@@ -1374,15 +1417,33 @@ cloudflare.com"
                                   </div>
                                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                                     <History className="w-4 h-4" />
-                                    <span className={monitor.is_active ? "text-green-500 font-medium" : "text-slate-500"}>
-{monitor.is_active ? "Active" : "Stopped"}
-</span>
-{monitorResults[monitor.id] && (
-  <span className="ml-2 text-xs flex items-center gap-1">
-    | {monitorResults[monitor.id].success ? <span className="text-green-500">Success</span> : <span className="text-red-500">Failed</span>}
-    | <span className="uppercase text-slate-500">{monitorResults[monitor.id].method}</span>
-  </span>
-)}
+                                    <span
+                                      className={
+                                        monitor.is_active
+                                          ? "text-green-500 font-medium"
+                                          : "text-slate-500"
+                                      }
+                                    >
+                                      {monitor.is_active ? "Active" : "Stopped"}
+                                    </span>
+                                    {monitorResults[monitor.id] && (
+                                      <span className="ml-2 text-xs flex items-center gap-1">
+                                        |{" "}
+                                        {monitorResults[monitor.id].success ? (
+                                          <span className="text-green-500">
+                                            Success
+                                          </span>
+                                        ) : (
+                                          <span className="text-red-500">
+                                            Failed
+                                          </span>
+                                        )}
+                                        |{" "}
+                                        <span className="uppercase text-slate-500">
+                                          {monitorResults[monitor.id].method}
+                                        </span>
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-1">
@@ -1390,10 +1451,28 @@ cloudflare.com"
                                     variant="ghost"
                                     size="icon"
                                     onClick={() => toggleMonitor(monitor)}
-                                    className={monitor.is_active ? "text-amber-500 hover:text-amber-600 hover:bg-amber-500/10" : "text-green-500 hover:text-green-600 hover:bg-green-500/10"}
-                                    title={monitor.is_active ? "Stop Monitor" : "Start Monitor"}
+                                    className={
+                                      monitor.is_active
+                                        ? "text-amber-500 hover:text-amber-600 hover:bg-amber-500/10"
+                                        : "text-green-500 hover:text-green-600 hover:bg-green-500/10"
+                                    }
+                                    title={
+                                      monitor.is_active
+                                        ? "Stop Monitor"
+                                        : "Start Monitor"
+                                    }
                                   >
-                                    {monitor.is_active ? <Square className="w-4 h-4" fill="currentColor" /> : <Play className="w-4 h-4" fill="currentColor" />}
+                                    {monitor.is_active ? (
+                                      <Square
+                                        className="w-4 h-4"
+                                        fill="currentColor"
+                                      />
+                                    ) : (
+                                      <Play
+                                        className="w-4 h-4"
+                                        fill="currentColor"
+                                      />
+                                    )}
                                   </Button>
                                   <Button
                                     variant="ghost"
@@ -1487,15 +1566,21 @@ cloudflare.com"
                             <span className="font-mono">{log.domain}</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            {(log.method || log.method_used) === "client" || (log.method || log.method_used) === "fallback" || (log.method || log.method_used) === "client-fallback" ? (
+                            {(log.method || log.method_used) === "client" ||
+                            (log.method || log.method_used) === "fallback" ||
+                            (log.method || log.method_used) ===
+                              "client-fallback" ? (
                               <span className="text-[10px] bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-400 px-1.5 py-0.5 rounded font-mono font-medium">
                                 fallback
                               </span>
-                            ) : (log.method || log.method_used) === "server-udp" || (log.method || log.method_used) === "server" ? (
+                            ) : (log.method || log.method_used) ===
+                                "server-udp" ||
+                              (log.method || log.method_used) === "server" ? (
                               <span className="text-[10px] bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400 px-1.5 py-0.5 rounded font-mono font-medium">
                                 server-udp
                               </span>
-                            ) : (log.method || log.method_used) === "server-doh" ? (
+                            ) : (log.method || log.method_used) ===
+                              "server-doh" ? (
                               <span className="text-[10px] bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400 px-1.5 py-0.5 rounded font-mono font-medium">
                                 server-doh
                               </span>
@@ -1661,7 +1746,7 @@ cloudflare.com"
                                   {record.latency_ms}ms
                                 </td>
                                 <td className="py-3 px-4">
-                                  {(record.method || record.method_used) ? (
+                                  {record.method || record.method_used ? (
                                     <span
                                       className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-medium ${(record.method || record.method_used) === "server" || (record.method || record.method_used) === "server-udp" || (record.method || record.method_used) === "server-doh" ? "bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400" : (record.method || record.method_used) === "client" || (record.method || record.method_used) === "client-fallback" || (record.method || record.method_used) === "fallback" ? "bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400" : "bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-400"}`}
                                     >
@@ -1741,14 +1826,28 @@ cloudflare.com"
                           Recommended DNS:{" "}
                           <span className="text-primary">
                             {
-                              leaderboard.sort((a, b) => b.score - a.score)[0]
-                                ?.provider
+                              leaderboard.sort(
+                                (a, b) =>
+                                  (b.reliability_score || b.score) -
+                                  (a.reliability_score || a.score)
+                              )[0]?.provider
                             }
                           </span>{" "}
                           (Score:{" "}
                           {leaderboard
-                            .sort((a, b) => b.score - a.score)[0]
-                            ?.score.toFixed(1)}
+                            .sort(
+                              (a, b) =>
+                                (b.reliability_score || b.score) -
+                                (a.reliability_score || a.score)
+                            )[0]
+                            ?.reliability_score?.toFixed(1) ||
+                            leaderboard
+                              .sort(
+                                (a, b) =>
+                                  (b.reliability_score || b.score) -
+                                  (a.reliability_score || a.score)
+                              )[0]
+                              ?.score?.toFixed(1)}
                           )
                         </p>
                       </div>
@@ -1766,13 +1865,19 @@ cloudflare.com"
                               <th className="px-4 py-3 font-medium">
                                 Success %
                               </th>
-                              <th className="px-4 py-3 font-medium">Score</th>
+                              <th className="px-4 py-3 font-medium">
+                                Reliability Score
+                              </th>
                               <th className="px-4 py-3 font-medium">Tests</th>
                             </tr>
                           </thead>
                           <tbody>
                             {leaderboard
-                              .sort((a, b) => b.score - a.score)
+                              .sort(
+                                (a, b) =>
+                                  (b.reliability_score || b.score) -
+                                  (a.reliability_score || a.score)
+                              )
                               .map((item, index) => {
                                 const provider = userProviders.find(
                                   p => p.name === item.provider
@@ -1833,9 +1938,14 @@ cloudflare.com"
                                       %
                                     </td>
                                     <td className="px-4 py-3 font-black text-primary">
-                                      {item.score === null || isNaN(item.score)
-                                        ? "0.0"
-                                        : item.score.toFixed(1)}
+                                      {item.reliability_score === null ||
+                                      item.reliability_score === undefined ||
+                                      isNaN(item.reliability_score)
+                                        ? item.score === null ||
+                                          isNaN(item.score)
+                                          ? "0.0"
+                                          : item.score.toFixed(1)
+                                        : item.reliability_score.toFixed(1)}
                                     </td>
                                     <td className="px-4 py-3 text-slate-500">
                                       {item.sample_count ||
@@ -1892,8 +2002,9 @@ cloudflare.com"
                           onClick={async () => {
                             if (!user) {
                               toast.error("Login required", {
-        description: "You must be logged in to save settings.",
-      });
+                                description:
+                                  "You must be logged in to save settings.",
+                              });
                               return;
                             }
                             const { error } = await supabase
@@ -1937,9 +2048,7 @@ cloudflare.com"
                         list.
                       </p>
                     </div>
-                    <div className="pt-6 border-t dark:border-slate-800">
-
-                    </div>
+                    <div className="pt-6 border-t dark:border-slate-800"></div>
                   </div>
                 )}
               </CardContent>
