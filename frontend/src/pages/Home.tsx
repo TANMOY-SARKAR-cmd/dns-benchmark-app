@@ -51,7 +51,7 @@ import {
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { AuthButton } from "@/components/AuthButton";
-import { runMonitorBenchmark } from "@/lib/monitor";
+import { measureDoHBatch } from "@/lib/doh";
 import { toast } from "sonner";
 
 export default function Home() {
@@ -72,12 +72,74 @@ export default function Home() {
 
   // Leaderboard & History
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
-  const [customIp, setCustomIp] = useState("");
+  const [customName, setCustomName] = useState("");
+  const [customUrl, setCustomUrl] = useState("");
   const [userProviders, setUserProviders] = useState<typeof DOH_PROVIDERS>([
     ...DOH_PROVIDERS,
   ]);
   const [isGlobalMonitoring, setIsGlobalMonitoring] = useState(false);
-  const monitorIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isGlobalMonitoringRef = useRef(isGlobalMonitoring);
+  useEffect(() => {
+    isGlobalMonitoringRef.current = isGlobalMonitoring;
+  }, [isGlobalMonitoring]);
+
+  useEffect(() => {
+    if (!isGlobalMonitoring) return;
+
+    let intervalId: NodeJS.Timeout;
+
+    const runGlobalMonitoring = async () => {
+      if (!isGlobalMonitoringRef.current || !user || !isSupabaseConfigured) return;
+
+      try {
+        const { data: monitors, error: fetchError } = await supabase
+          .from("monitors")
+          .select("*")
+          .eq("is_active", true);
+
+        if (fetchError || !monitors || monitors.length === 0) return;
+
+        for (const monitor of monitors) {
+          if (!isGlobalMonitoringRef.current) break;
+
+          const domains = monitor.domains || [];
+          const providerNames = monitor.providers || [];
+
+          if (domains.length === 0 || providerNames.length === 0) continue;
+
+          for (const pName of providerNames) {
+            const provider = userProviders.find((p: any) => p.name === pName);
+            if (!provider) continue;
+
+            const results = await measureDoHBatch(domains, provider, 1);
+
+            const resultsToInsert = Object.entries(results).map(([domain, res]: [string, any]) => ({
+              monitor_id: monitor.id,
+              user_id: user.id,
+              domain,
+              provider: provider.name,
+              latency_ms: res.successRate > 0 ? res.avgLatency : null,
+              success: res.successRate > 0,
+              method: res.method,
+              error: res.successRate === 0 ? "Timeout" : null,
+              tested_at: new Date().toISOString()
+            }));
+
+            if (resultsToInsert.length > 0) {
+              await supabase.from("monitor_results").insert(resultsToInsert);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Global monitoring error:", err);
+      }
+    };
+
+    runGlobalMonitoring();
+    intervalId = setInterval(runGlobalMonitoring, 30000);
+
+    return () => clearInterval(intervalId);
+  }, [isGlobalMonitoring, user, userProviders]);
   const [history, setHistory] = useState<any[]>([]);
   const [liveLogs, setLiveLogs] = useState<any[]>([]);
   const [session, setSession] = useState<any>(null);
@@ -157,18 +219,16 @@ export default function Home() {
       if (error && error.code !== "PGRST116") throw error;
       if (
         data &&
-        data.custom_dns &&
-        Array.isArray(data.custom_dns) &&
-        data.custom_dns.length > 0
+        data.custom_dns_name &&
+        data.custom_dns_url
       ) {
-        const customIp = data.custom_dns[0];
-        setCustomIp(customIp);
+        setCustomName(data.custom_dns_name);
+        setCustomUrl(data.custom_dns_url);
         setUserProviders([
           ...DOH_PROVIDERS,
           {
-            name: "Custom",
-            url: "",
-            customIp,
+            name: data.custom_dns_name,
+            url: data.custom_dns_url,
             color: "#8b5cf6",
             format: "json",
           },
@@ -641,11 +701,14 @@ export default function Home() {
         results[domain] = {};
 
         // Prepare queries for all providers for this domain
-        const queries = userProviders.map(p => ({
-          domain,
-          provider: p.name,
-          customIp: p.customIp,
-        }));
+        const queries = userProviders.map(p => {
+          const isCustom = !DOH_PROVIDERS.some(dp => dp.name === p.name);
+          return {
+            domain,
+            provider: isCustom ? "custom" : p.name,
+            customUrl: isCustom ? p.url : undefined,
+          };
+        });
 
         setProgressText(`Testing ${domain}...`);
 
@@ -941,6 +1004,12 @@ export default function Home() {
               className="flex items-center gap-2"
             >
               <Trophy className="w-4 h-4" /> Leaderboard
+            </TabsTrigger>
+            <TabsTrigger
+              value="settings"
+              className="flex items-center gap-2"
+            >
+              <Settings className="w-4 h-4" /> Settings
             </TabsTrigger>
           </TabsList>
 
@@ -1789,25 +1858,32 @@ cloudflare.com"
                   </div>
                 ) : (
                   <div className="space-y-6 max-w-md">
-                    <div>
+                    <div className="space-y-4">
                       <h3 className="text-sm font-medium mb-2">
-                        Custom DNS Provider IP
+                        Custom DNS Provider
                       </h3>
-                      <div className="flex gap-2">
+                      <div className="grid gap-2">
                         <Input
-                          placeholder="e.g. 1.1.1.1"
-                          value={customIp}
-                          onChange={e => setCustomIp(e.target.value)}
+                          placeholder="Provider Name (e.g. My Custom DNS)"
+                          value={customName}
+                          onChange={e => setCustomName(e.target.value)}
                         />
+                        <Input
+                          placeholder="DoH URL (e.g. https://dns.quad9.net/dns-query)"
+                          value={customUrl}
+                          onChange={e => setCustomUrl(e.target.value)}
+                        />
+                      </div>
+                      <div className="flex justify-end mt-2">
                         <Button
                           onClick={async () => {
-                            const ipList = customIp ? [customIp] : [];
                             const { error } = await supabase
                               .from("user_preferences")
                               .upsert(
                                 {
                                   user_id: user.id,
-                                  custom_dns: ipList,
+                                  custom_dns_name: customName || null,
+                                  custom_dns_url: customUrl || null,
                                 },
                                 { onConflict: "user_id" }
                               );
@@ -1815,13 +1891,12 @@ cloudflare.com"
                               toast.error("Failed to save settings");
                             } else {
                               toast.success("Settings saved!");
-                              if (customIp) {
+                              if (customName && customUrl) {
                                 setUserProviders([
                                   ...DOH_PROVIDERS,
                                   {
-                                    name: "Custom",
-                                    url: "",
-                                    customIp,
+                                    name: customName,
+                                    url: customUrl,
                                     color: "#8b5cf6",
                                     format: "json",
                                   },
@@ -1836,9 +1911,9 @@ cloudflare.com"
                           Save
                         </Button>
                       </div>
-                      <p className="text-xs text-slate-500 mt-2">
-                        Provide a valid IP address for a custom DNS resolver.
-                        This will add "Custom" to the benchmark providers.
+                      <p className="text-xs text-slate-500">
+                        Provide a valid DoH endpoint URL for a custom DNS resolver.
+                        This will add your provider to the benchmark list.
                       </p>
                     </div>
                     <div className="pt-6 border-t dark:border-slate-800">
