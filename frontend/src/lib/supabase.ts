@@ -6,6 +6,6 @@ export const supabase = createClient(ENV.supabaseUrl, ENV.supabaseAnonKey, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    storage: window.localStorage
+    storage: localStorage
   }
 });
