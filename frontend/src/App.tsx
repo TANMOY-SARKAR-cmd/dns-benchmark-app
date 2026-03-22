@@ -1,7 +1,7 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { AuthProvider } from "./contexts/AuthContext";
@@ -10,13 +10,18 @@ import Account from "./pages/Account";
 
 function Router() {
   return (
-    <Switch>
-      <Route path={"/"} component={Home} />
-      <Route path={"/account"} component={Account} />
-      <Route path={"/404"} component={NotFound} />
+    <Routes>
+      <Route path="/" element={<Home tab="benchmark" />} />
+      <Route path="/logs" element={<Home tab="logs" />} />
+      <Route path="/monitors" element={<Home tab="monitors" />} />
+      <Route path="/history" element={<Home tab="history" />} />
+      <Route path="/leaderboard" element={<Home tab="leaderboard" />} />
+      <Route path="/settings" element={<Home tab="settings" />} />
+      <Route path="/account" element={<Account />} />
+      <Route path="/404" element={<NotFound />} />
       {/* Final fallback route */}
-      <Route component={NotFound} />
-    </Switch>
+      <Route path="*" element={<NotFound />} />
+    </Routes>
   );
 }
 
@@ -27,7 +32,9 @@ function App() {
         <AuthProvider>
           <TooltipProvider>
             <Toaster />
-            <Router />
+            <BrowserRouter>
+              <Router />
+            </BrowserRouter>
           </TooltipProvider>
         </AuthProvider>
       </ThemeProvider>

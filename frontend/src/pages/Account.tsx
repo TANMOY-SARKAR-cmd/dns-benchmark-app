@@ -14,12 +14,12 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { Github, CheckCircle2, Mail, Trash2, Home, Globe, Moon, Sun, Download, Trash } from "lucide-react";
 import { DiscordLogoIcon } from "@radix-ui/react-icons";
-import { useLocation } from "wouter";
+import { useNavigate } from "react-router-dom";
 
 export default function Account() {
   const { user, profile, refreshProfile } = useAuth();
   const { theme, setTheme } = useTheme();
-  const [, setLocation] = useLocation();
+  const navigate = useNavigate();
 
   const [username, setUsername] = useState("");
   const [fullName, setFullName] = useState("");
@@ -80,7 +80,7 @@ export default function Account() {
         <div className="container mx-auto px-4 py-8 max-w-4xl text-center">
           <h1 className="text-3xl font-bold mb-4">Account Settings</h1>
           <p className="text-slate-500 mb-8">Please log in to view your account settings.</p>
-          <Button onClick={() => setLocation("/")}>Return Home</Button>
+          <Button onClick={() => navigate("/")}>Return Home</Button>
         </div>
       </div>
     );
@@ -210,7 +210,7 @@ export default function Account() {
         await supabase.auth.signOut();
       }
 
-      setLocation("/");
+      navigate("/");
       toast.success("Account deleted successfully");
     } catch (error: any) {
       toast.error("Failed to delete account");
@@ -312,7 +312,7 @@ export default function Account() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => setLocation("/")}>
+            <Button variant="outline" onClick={() => navigate("/")}>
               <Home className="w-4 h-4 mr-2" />
               Home
             </Button>
