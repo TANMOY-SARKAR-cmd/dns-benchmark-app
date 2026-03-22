@@ -106,7 +106,9 @@ async function resolveDnsQuery(
         latency: nativeLatency,
         error: null,
       };
-      console.log({ provider, method, latency: nativeLatency, success: true });
+      if (process.env.DEBUG === "true") {
+        console.log({ provider, method, latency: nativeLatency, success: true });
+      }
       return result;
     }
   }
@@ -139,7 +141,9 @@ async function resolveDnsQuery(
         latency: null,
         error: `HTTP ${response.status}`,
       };
-      console.log({ provider, method, latency: null, success: false });
+      if (process.env.DEBUG === "true") {
+        console.log({ provider, method, latency: null, success: false });
+      }
       return result;
     }
 
@@ -154,7 +158,9 @@ async function resolveDnsQuery(
       latency,
       error: null,
     };
-    console.log({ provider, method, latency, success: true });
+    if (process.env.DEBUG === "true") {
+      console.log({ provider, method, latency, success: true });
+    }
     return result;
   } catch (err: unknown) {
     clearTimeout(timeoutId);
@@ -167,7 +173,9 @@ async function resolveDnsQuery(
       latency: null,
       error: isAbort ? "Timeout" : String(err),
     };
-    console.log({ provider, method, latency: null, success: false });
+    if (process.env.DEBUG === "true") {
+      console.log({ provider, method, latency: null, success: false });
+    }
     return result;
   }
 }
