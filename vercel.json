@@ -4,12 +4,8 @@
   "framework": "vite",
   "crons": [
     {
-      "path": "/api/cron",
-      "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/global-monitor",
-      "schedule": "*/5 * * * *"
+      "path": "/api/daily-job",
+      "schedule": "0 2 * * *"
     }
   ]
 }
