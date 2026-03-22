@@ -1869,6 +1869,7 @@ cloudflare.com"
                                 Reliability Score
                               </th>
                               <th className="px-4 py-3 font-medium">Tests</th>
+                              <th className="px-4 py-3 font-medium">Method Stats</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1951,6 +1952,16 @@ cloudflare.com"
                                       {item.sample_count ||
                                         item.total_tests ||
                                         0}
+                                    </td>
+                                    <td className="px-4 py-3 text-xs space-y-1">
+                                      {item.udp_percentage !== undefined && (
+                                        <>
+                                          <div className="flex justify-between w-32"><span className="text-slate-500">UDP:</span><span className="font-medium text-blue-500">{item.udp_percentage.toFixed(1)}%</span></div>
+                                          <div className="flex justify-between w-32"><span className="text-slate-500">DoH:</span><span className="font-medium text-indigo-500">{item.doh_percentage.toFixed(1)}%</span></div>
+                                          <div className="flex justify-between w-32"><span className="text-slate-500">Fallback:</span><span className="font-medium text-orange-500">{item.fallback_percentage.toFixed(1)}%</span></div>
+                                          <div className="flex justify-between w-32"><span className="text-slate-500">Failed:</span><span className="font-medium text-red-500">{item.failure_percentage.toFixed(1)}%</span></div>
+                                        </>
+                                      )}
                                     </td>
                                   </tr>
                                 );
