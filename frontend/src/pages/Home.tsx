@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -55,7 +56,18 @@ import { AuthButton } from "@/components/AuthButton";
 import { measureDoHBatch } from "@/lib/doh";
 import { toast } from "sonner";
 
-export default function Home() {
+export default function Home({ tab = "benchmark" }: { tab?: string }) {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const handleNavigateTab = (e: any) => {
+      const targetTab = e.detail;
+      if (targetTab === "benchmark") navigate("/");
+      else navigate("/" + targetTab);
+    };
+    window.addEventListener("navigateTab", handleNavigateTab);
+    return () => window.removeEventListener("navigateTab", handleNavigateTab);
+  }, [navigate]);
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
   const userId = user?.id || "anonymous";
@@ -69,7 +81,7 @@ export default function Home() {
   > | null>(null);
 
   // Tabs
-  const [activeTab, setActiveTab] = useState("benchmark");
+
 
   // Leaderboard & History
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
@@ -1128,11 +1140,7 @@ export default function Home() {
           </div>
         </div>
 
-        <Tabs
-          value={activeTab}
-          onValueChange={setActiveTab}
-          className="space-y-8"
-        >
+        <Tabs value={tab} onValueChange={(val) => { if (val === "benchmark") navigate("/"); else navigate("/" + val); }} className="space-y-8">
           <TabsList className="flex flex-wrap sm:grid sm:grid-cols-5 md:w-auto h-auto min-h-10">
             <TabsTrigger value="benchmark" className="flex items-center gap-2">
               <Play className="w-4 h-4" /> Benchmark

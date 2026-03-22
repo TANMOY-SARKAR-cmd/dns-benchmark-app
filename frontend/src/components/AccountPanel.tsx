@@ -14,12 +14,12 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { LogOut, Link as LinkIcon, Settings } from "lucide-react";
-import { useLocation } from "wouter";
+import { useNavigate } from "react-router-dom";
 import { ManageAccountsDialog } from "./ManageAccountsDialog";
 
 export function AccountPanel() {
   const { user, profile } = useAuth();
-  const [, setLocation] = useLocation();
+  const navigate = useNavigate();
   const [isManageOpen, setIsManageOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
@@ -74,7 +74,7 @@ export function AccountPanel() {
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
-            <DropdownMenuItem onClick={() => setLocation("/account")}>
+            <DropdownMenuItem onClick={() => navigate("/account")}>
               <Settings className="mr-2 h-4 w-4" />
               <span>Account Settings</span>
             </DropdownMenuItem>
