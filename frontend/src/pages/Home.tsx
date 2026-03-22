@@ -47,7 +47,7 @@ import {
   Server,
   Clock,
   Trash2,
-  Square,
+  Square, Star, ShieldCheck, Zap,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -78,6 +78,12 @@ export default function Home() {
   const [userProviders, setUserProviders] = useState<typeof DOH_PROVIDERS>([
     ...DOH_PROVIDERS,
   ]);
+
+  const [personalBest, setPersonalBest] = useState<{
+    recommended: any;
+    fastest: any;
+    mostReliable: any;
+  } | null>(null);
 
   const [history, setHistory] = useState<any[]>([]);
   const [liveLogs, setLiveLogs] = useState<any[]>([]);
@@ -118,6 +124,7 @@ export default function Home() {
 
     fetchLeaderboard();
     fetchHistory();
+    fetchPersonalBest();
 
     // Subscribe to live logs
     const channel = sb
@@ -548,6 +555,96 @@ export default function Home() {
     } catch (e) {
       console.error(e);
       toast.error("Failed to delete monitor");
+    }
+  };
+
+  const fetchPersonalBest = async () => {
+    if (!user) {
+      setPersonalBest(null);
+      return;
+    }
+
+    try {
+      const { data: monitorData, error: monitorError } = await supabase
+        .from("monitor_results")
+        .select("provider, latency_ms, success")
+        .eq("user_id", user.id);
+
+      if (monitorError) throw monitorError;
+
+      const { data: benchmarkData, error: benchmarkError } = await supabase
+        .from("benchmark_results")
+        .select("provider, latency_ms, success")
+        .eq("user_id", user.id);
+
+      if (benchmarkError) throw benchmarkError;
+
+      const allData = [...(monitorData || []), ...(benchmarkData || [])];
+
+      if (allData.length === 0) {
+        setPersonalBest(null);
+        return;
+      }
+
+      const agg: Record<
+        string,
+        { latencies: number[]; successCount: number; total: number }
+      > = {};
+
+      for (const row of allData) {
+        if (!agg[row.provider]) {
+          agg[row.provider] = { latencies: [], successCount: 0, total: 0 };
+        }
+        agg[row.provider].total += 1;
+        if (row.success) {
+          agg[row.provider].successCount += 1;
+          if (row.latency_ms !== null) {
+            agg[row.provider].latencies.push(row.latency_ms);
+          }
+        }
+      }
+
+      const stats = Object.entries(agg).map(([provider, stat]) => {
+        const success_rate = stat.successCount / stat.total;
+        const avg_latency =
+          stat.latencies.length > 0
+            ? stat.latencies.reduce((a, b) => a + b, 0) / stat.latencies.length
+            : null;
+
+        let reliability_score = 0;
+        if (success_rate !== 0 && avg_latency !== null) {
+          reliability_score =
+            (success_rate * 0.6) +
+            ((1.0 / Math.max(avg_latency, 1)) * 0.25) +
+            (Math.log10(Math.max(stat.total || 1, 1)) * 0.15);
+        }
+
+        return {
+          provider,
+          avg_latency,
+          success_rate,
+          reliability_score,
+          total: stat.total,
+        };
+      }).filter(s => s.avg_latency !== null);
+
+      if (stats.length === 0) {
+        setPersonalBest(null);
+        return;
+      }
+
+      const fastest = [...stats].sort((a, b) => (a.avg_latency || 9999) - (b.avg_latency || 9999))[0];
+      const mostReliable = [...stats].sort((a, b) => b.success_rate - a.success_rate)[0];
+      const recommended = [...stats].sort((a, b) => b.reliability_score - a.reliability_score)[0];
+
+      setPersonalBest({
+        fastest,
+        mostReliable,
+        recommended,
+      });
+
+    } catch (error) {
+      console.error("Error fetching personal best:", error);
     }
   };
 
@@ -1063,6 +1160,46 @@ export default function Home() {
           </TabsList>
 
           <TabsContent value="benchmark" className="space-y-8">
+            {user && personalBest && (
+              <div className="mb-8">
+                <h2 className="text-xl font-bold mb-4">Your Best DNS</h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/50 dark:to-indigo-950/50 border-blue-100 dark:border-blue-900 shadow-sm">
+                    <CardContent className="p-6 flex items-center gap-4">
+                      <div className="p-3 bg-blue-100 dark:bg-blue-900 rounded-full text-blue-600 dark:text-blue-400">
+                        <Star className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Recommended DNS for you</p>
+                        <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">{personalBest.recommended.provider}</h3>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card className="bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/50 dark:to-teal-950/50 border-emerald-100 dark:border-emerald-900 shadow-sm">
+                    <CardContent className="p-6 flex items-center gap-4">
+                      <div className="p-3 bg-emerald-100 dark:bg-emerald-900 rounded-full text-emerald-600 dark:text-emerald-400">
+                        <ShieldCheck className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Most reliable DNS</p>
+                        <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">{personalBest.mostReliable.provider}</h3>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card className="bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/50 dark:to-orange-950/50 border-amber-100 dark:border-amber-900 shadow-sm">
+                    <CardContent className="p-6 flex items-center gap-4">
+                      <div className="p-3 bg-amber-100 dark:bg-amber-900 rounded-full text-amber-600 dark:text-amber-400">
+                        <Zap className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Fastest DNS</p>
+                        <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">{personalBest.fastest.provider}</h3>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Input Section */}
               <div className="md:col-span-2">
