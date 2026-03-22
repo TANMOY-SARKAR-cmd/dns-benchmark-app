@@ -1,18 +1,43 @@
-# Client-side DNS Benchmark – DoH-based
+# DNS Benchmark
 
-A 100% client-side DNS benchmarking application using DNS-over-HTTPS (DoH). Test multiple public DNS providers instantly from your browser without requiring any backend server.
+A hybrid architecture DNS benchmarking application. Test multiple public DNS providers instantly from your browser using both native UDP and DNS-over-HTTPS (DoH).
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/TANMOY-SARKAR-cmd/dns-benchmark-app)
 
+## Architecture
+
+**Frontend:**
+- React + Vite
+- Runs benchmark UI
+- Runs personal monitoring
+
+**Backend:**
+- Vercel Serverless Functions
+- UDP DNS testing
+- DoH testing
+- Daily cron job
+
+**Database:**
+- Supabase PostgreSQL
+- Stores benchmark results
+- Stores monitor results
+- Stores leaderboard
+- Stores user preferences
+
+**Monitoring:**
+- Personal monitors run in browser
+- Global stats computed from all user data
+- Daily cron computes leaderboard
+
 ## Features
 
-- **Fully Client-Side:** Runs entirely in your browser using DoH (DNS-over-HTTPS). No backend required.
+- **Hybrid Architecture:** Uses Vercel serverless backend for UDP/DoH testing and React frontend for benchmarking.
+- **Authentication:** Secure user accounts via Supabase.
 - **Multiple Providers:** Tests Cloudflare, Google, Quad9, AdGuard, and OpenDNS simultaneously.
-- **Batch Processing:** Intelligently batches requests to prevent browser throttling.
-- **Real-time Leaderboard:** See global average latencies for each provider across all users.
-- **Live Logs Stream:** Watch real-time benchmark results from other users around the world.
-- **History Tracking:** View your recent benchmark runs on an interactive chart.
-- **CSV Export:** Download your test results for offline analysis.
+- **Real-time Leaderboard:** See global average latencies, success rates, and scores.
+- **Personal Monitoring:** Run monitors directly in your browser.
+- **History Tracking:** View your recent benchmark runs.
+- **Daily Cron Job:** Automatically aggregates data and computes global leaderboard stats.
 - **Dark Mode Support:** Automatic system preference detection with manual toggle.
 
 ## Screenshots
@@ -22,9 +47,9 @@ _(Placeholder for screenshots - Add screenshots of the benchmark interface, lead
 ## Tech Stack
 
 - **Frontend:** React, TypeScript, Vite, Tailwind CSS, shadcn/ui
-- **Database & Realtime:** Supabase
+- **Backend:** Vercel Serverless Functions (Node.js)
+- **Database & Authentication:** Supabase PostgreSQL
 - **Charts:** Recharts
-- **Data Processing:** PapaParse
 
 ## Setup Instructions
 
