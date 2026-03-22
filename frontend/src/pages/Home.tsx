@@ -89,7 +89,8 @@ export default function Home() {
     let intervalId: NodeJS.Timeout;
 
     const runGlobalMonitoring = async () => {
-      if (!isGlobalMonitoringRef.current || !user || !isSupabaseConfigured) return;
+      if (!isGlobalMonitoringRef.current || !user || !isSupabaseConfigured)
+        return;
 
       try {
         const { data: monitors, error: fetchError } = await supabase
@@ -113,17 +114,19 @@ export default function Home() {
 
             const results = await measureDoHBatch(domains, provider, 1);
 
-            const resultsToInsert = Object.entries(results).map(([domain, res]: [string, any]) => ({
-              monitor_id: monitor.id,
-              user_id: user.id,
-              domain,
-              provider: provider.name,
-              latency_ms: res.successRate > 0 ? res.avgLatency : null,
-              success: res.successRate > 0,
-              method: res.method,
-              error: res.successRate === 0 ? "Timeout" : null,
-              tested_at: new Date().toISOString()
-            }));
+            const resultsToInsert = Object.entries(results).map(
+              ([domain, res]: [string, any]) => ({
+                monitor_id: monitor.id,
+                user_id: user.id,
+                domain,
+                provider: provider.name,
+                latency_ms: res.successRate > 0 ? res.avgLatency : null,
+                success: res.successRate > 0,
+                method: res.method,
+                error: res.successRate === 0 ? "Timeout" : null,
+                tested_at: new Date().toISOString(),
+              })
+            );
 
             if (resultsToInsert.length > 0) {
               await supabase.from("monitor_results").insert(resultsToInsert);
@@ -217,11 +220,7 @@ export default function Home() {
         .eq("user_id", user.id)
         .single();
       if (error && error.code !== "PGRST116") throw error;
-      if (
-        data &&
-        data.custom_dns_name &&
-        data.custom_dns_url
-      ) {
+      if (data && data.custom_dns_name && data.custom_dns_url) {
         setCustomName(data.custom_dns_name);
         setCustomUrl(data.custom_dns_url);
         setUserProviders([
@@ -582,22 +581,27 @@ export default function Home() {
         dataToProcess = data || [];
       }
 
-      // Calculate score and replace null jitter
+      // Calculate personal score if needed, global comes with score
       const processedLeaderboard = dataToProcess.map((item: any) => {
-        let jitter = item.jitter === null ? item.avg_latency : item.jitter;
-        let score = 0;
+        if (item.score !== undefined) {
+          return item;
+        }
 
-        if (item.success_rate !== 0 && item.avg_latency !== null) {
+        // Local calculation for personal stats fallback
+        let score = 0;
+        const successRateDecimal = item.success_rate / 100; // was 0-100 locally
+        if (successRateDecimal !== 0 && item.avg_latency !== null) {
           score =
-            item.success_rate * 0.5 +
-            (1000 / item.avg_latency) * 0.3 +
-            (1000 / jitter) * 0.2;
+            successRateDecimal * 0.5 +
+            (1.0 / item.avg_latency) * 0.3 +
+            Math.log10(Math.max(item.total_tests || 1, 1)) * 0.2;
         }
 
         return {
           ...item,
-          jitter,
           score,
+          success_rate: successRateDecimal, // normalize to 0-1
+          sample_count: item.total_tests,
         };
       });
 
@@ -744,10 +748,7 @@ export default function Home() {
             );
           }
 
-          if (
-            serverResult &&
-            serverResult.success === true
-          ) {
+          if (serverResult && serverResult.success === true) {
             // Server succeeded
             results[domain][provider.name] = {
               avgLatency: serverResult.latency,
@@ -810,9 +811,7 @@ export default function Home() {
           let final_method = "failed";
           let final_latency = null;
 
-          const serverSuccess =
-            serverResult &&
-            serverResult.success === true;
+          const serverSuccess = serverResult && serverResult.success === true;
 
           const clientSuccess =
             clientResult &&
@@ -1005,10 +1004,7 @@ export default function Home() {
             >
               <Trophy className="w-4 h-4" /> Leaderboard
             </TabsTrigger>
-            <TabsTrigger
-              value="settings"
-              className="flex items-center gap-2"
-            >
+            <TabsTrigger value="settings" className="flex items-center gap-2">
               <Settings className="w-4 h-4" /> Settings
             </TabsTrigger>
           </TabsList>
@@ -1205,8 +1201,7 @@ export default function Home() {
                                   badgeText = "Failed";
                                 } else if (
                                   result &&
-                                  (
-                                    result.method === "server-udp" ||
+                                  (result.method === "server-udp" ||
                                     result.method === "server-doh")
                                 ) {
                                   badgeColor =
@@ -1214,7 +1209,7 @@ export default function Home() {
                                   badgeText = "Server";
                                 } else if (
                                   result &&
-                                  (result.method === "fallback")
+                                  result.method === "fallback"
                                 ) {
                                   badgeColor =
                                     "bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400";
@@ -1752,7 +1747,6 @@ cloudflare.com"
                               <th className="px-4 py-3 font-medium">
                                 Success %
                               </th>
-                              <th className="px-4 py-3 font-medium">Jitter</th>
                               <th className="px-4 py-3 font-medium">Score</th>
                               <th className="px-4 py-3 font-medium">Tests</th>
                             </tr>
@@ -1767,9 +1761,12 @@ cloudflare.com"
 
                                 // Color logic
                                 let successColor = "text-red-500";
-                                if (item.success_rate >= 95)
-                                  successColor = "text-green-500";
-                                else if (item.success_rate >= 80)
+                                const rate =
+                                  item.success_rate <= 1
+                                    ? item.success_rate * 100
+                                    : item.success_rate;
+                                if (rate >= 95) successColor = "text-green-500";
+                                else if (rate >= 80)
                                   successColor = "text-yellow-500";
 
                                 let latencyColor = "text-red-500";
@@ -1811,15 +1808,10 @@ cloudflare.com"
                                       {item.success_rate === null ||
                                       isNaN(item.success_rate)
                                         ? "N/A"
-                                        : Math.round(item.success_rate)}
+                                        : item.success_rate <= 1
+                                          ? (item.success_rate * 100).toFixed(1)
+                                          : item.success_rate.toFixed(1)}
                                       %
-                                    </td>
-                                    <td className="px-4 py-3">
-                                      {item.jitter === null ||
-                                      isNaN(item.jitter)
-                                        ? "N/A"
-                                        : Math.round(item.jitter)}{" "}
-                                      ms
                                     </td>
                                     <td className="px-4 py-3 font-black text-primary">
                                       {item.score === null || isNaN(item.score)
@@ -1827,7 +1819,9 @@ cloudflare.com"
                                         : item.score.toFixed(1)}
                                     </td>
                                     <td className="px-4 py-3 text-slate-500">
-                                      {item.total_tests || 0}
+                                      {item.sample_count ||
+                                        item.total_tests ||
+                                        0}
                                     </td>
                                   </tr>
                                 );
@@ -1912,8 +1906,9 @@ cloudflare.com"
                         </Button>
                       </div>
                       <p className="text-xs text-slate-500">
-                        Provide a valid DoH endpoint URL for a custom DNS resolver.
-                        This will add your provider to the benchmark list.
+                        Provide a valid DoH endpoint URL for a custom DNS
+                        resolver. This will add your provider to the benchmark
+                        list.
                       </p>
                     </div>
                     <div className="pt-6 border-t dark:border-slate-800">
