@@ -84,6 +84,7 @@ CREATE TABLE public.leaderboard (
   success_rate double precision,
   sample_count integer,
   score double precision,
+  reliability_score double precision,
   last_updated timestamp with time zone DEFAULT now()
 );
 
