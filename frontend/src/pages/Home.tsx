@@ -89,6 +89,7 @@ export default function Home() {
   const [monitorDomains, setMonitorDomains] = useState("");
   const [monitorInterval, setMonitorInterval] = useState(60);
   const [isCreatingMonitor, setIsCreatingMonitor] = useState(false);
+  const activeIntervals = useRef<Record<string, NodeJS.Timeout>>({});
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
@@ -187,6 +188,72 @@ export default function Home() {
       console.error("Preferences fetch error:", e);
     }
   };
+
+
+  useEffect(() => {
+    if (!user) return;
+
+    // Clear all existing intervals
+    Object.values(activeIntervals.current).forEach(clearInterval);
+    activeIntervals.current = {};
+
+    monitors.forEach(monitor => {
+      if (monitor.is_active) {
+        const intervalMs = (monitor.interval_seconds || 60) * 1000;
+
+        // Execute immediately, then on interval
+        const runMonitor = async () => {
+          if (!monitor.domains || !monitor.providers || monitor.domains.length === 0 || monitor.providers.length === 0) {
+            return;
+          }
+
+          try {
+            const testedAt = new Date().toISOString();
+            const payload: any[] = [];
+
+            for (const providerName of monitor.providers) {
+              const provider = userProviders.find((p: any) => p.name === providerName) || DOH_PROVIDERS.find((p: any) => p.name === providerName);
+              if (!provider) continue;
+
+              const results = await measureDoHBatch(monitor.domains, provider, 3);
+
+              for (const domain of monitor.domains) {
+                const res = results[domain];
+                if (!res) continue;
+
+                payload.push({
+                  user_id: user.id,
+                  monitor_id: monitor.id,
+                  domain: domain,
+                  provider: provider.name,
+                  latency_ms: res.successRate > 0 ? res.avgLatency : null,
+                  success: res.successRate > 0,
+                  method: res.method || "failed",
+                  error: res.successRate > 0 ? null : "Failed to resolve",
+                  tested_at: testedAt,
+                  keep_forever: false
+                });
+              }
+            }
+
+            if (payload.length > 0) {
+              await supabase.from("monitor_results").insert(payload);
+            }
+          } catch (e) {
+            console.error("Monitor execution failed for", monitor.id, e);
+          }
+        };
+
+        // runMonitor(); // We don't necessarily want to run it immediately on load if it just ran
+        const intervalId = setInterval(runMonitor, intervalMs);
+        activeIntervals.current[monitor.id] = intervalId;
+      }
+    });
+
+    return () => {
+      Object.values(activeIntervals.current).forEach(clearInterval);
+    };
+  }, [monitors, user]);
 
   const fetchMonitors = async () => {
     if (!user) return;
