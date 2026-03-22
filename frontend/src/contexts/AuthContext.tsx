@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { User } from "@supabase/supabase-js";
+import { User, Session } from "@supabase/supabase-js";
 
 interface Profile {
   id: string;
@@ -10,6 +10,7 @@ interface Profile {
 
 interface AuthContextType {
   user: User | null;
+  session: Session | null;
   profile: Profile | null;
   isLoading: boolean;
   refreshProfile: () => Promise<void>;
@@ -17,6 +18,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
+  session: null,
   profile: null,
   isLoading: true,
   refreshProfile: async () => {},
@@ -24,6 +26,7 @@ const AuthContext = createContext<AuthContextType>({
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -38,14 +41,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data, error }) => {
-      if (error) console.error("Auth error:", error);
-      setUser(data.user);
-      if (data.user) {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) console.error("Auth session error:", error);
+      setSession(session);
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) {
         supabase
           .from("profiles")
           .select("*")
-          .eq("id", data.user.id)
+          .eq("id", currentUser.id)
           .single()
           .then(({ data: profileData }) => {
             setProfile(profileData);
@@ -57,8 +62,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        const currentUser = session?.user ?? null;
+      (_event, currentSession) => {
+        setSession(currentSession);
+        const currentUser = currentSession?.user ?? null;
         setUser(currentUser);
         if (currentUser) {
           supabase
@@ -81,7 +87,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, profile, isLoading, refreshProfile }}>
+    <AuthContext.Provider value={{ user, session, profile, isLoading, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
