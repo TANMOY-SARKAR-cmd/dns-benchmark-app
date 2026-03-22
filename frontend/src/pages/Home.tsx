@@ -1487,20 +1487,19 @@ cloudflare.com"
                             <span className="font-mono">{log.domain}</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            {log.method === "fallback" ||
-                            log.method_used === "client" ? (
+                            {(log.method || log.method_used) === "client" || (log.method || log.method_used) === "fallback" || (log.method || log.method_used) === "client-fallback" ? (
                               <span className="text-[10px] bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-400 px-1.5 py-0.5 rounded font-mono font-medium">
                                 fallback
                               </span>
-                            ) : log.method === "server-udp" ? (
+                            ) : (log.method || log.method_used) === "server-udp" || (log.method || log.method_used) === "server" ? (
                               <span className="text-[10px] bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400 px-1.5 py-0.5 rounded font-mono font-medium">
                                 server-udp
                               </span>
-                            ) : log.method === "server-doh" ? (
+                            ) : (log.method || log.method_used) === "server-doh" ? (
                               <span className="text-[10px] bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400 px-1.5 py-0.5 rounded font-mono font-medium">
                                 server-doh
                               </span>
-                            ) : log.method === "failed" ? (
+                            ) : (log.method || log.method_used) === "failed" ? (
                               <span className="text-[10px] bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-400 px-1.5 py-0.5 rounded font-mono font-medium">
                                 failed
                               </span>
@@ -1662,11 +1661,11 @@ cloudflare.com"
                                   {record.latency_ms}ms
                                 </td>
                                 <td className="py-3 px-4">
-                                  {record.method_used ? (
+                                  {(record.method || record.method_used) ? (
                                     <span
-                                      className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-medium ${record.method_used === "server" || record.method_used === "server-udp" || record.method_used === "server-doh" ? "bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400" : record.method_used === "client" || record.method_used === "client-fallback" ? "bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400" : "bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-400"}`}
+                                      className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-medium ${(record.method || record.method_used) === "server" || (record.method || record.method_used) === "server-udp" || (record.method || record.method_used) === "server-doh" ? "bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400" : (record.method || record.method_used) === "client" || (record.method || record.method_used) === "client-fallback" || (record.method || record.method_used) === "fallback" ? "bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400" : "bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-400"}`}
                                     >
-                                      {record.method_used}
+                                      {record.method || record.method_used}
                                       {}
                                     </span>
                                   ) : (
