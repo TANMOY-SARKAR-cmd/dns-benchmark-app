@@ -17,6 +17,7 @@ export function UsernameSetupModal() {
   const { user, profile, refreshProfile } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [username, setUsername] = useState("");
+  const [fullName, setFullName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -27,6 +28,7 @@ export function UsernameSetupModal() {
     ) {
       setIsOpen(true);
       setUsername(profile.username || "");
+      setFullName(profile.full_name || "");
     } else {
       setIsOpen(false);
     }
@@ -46,7 +48,7 @@ export function UsernameSetupModal() {
     try {
       const { error } = await supabase
         .from("profiles")
-        .update({ username })
+        .update({ username, full_name: fullName })
         .eq("id", user.id);
 
       if (error) {
@@ -74,15 +76,15 @@ export function UsernameSetupModal() {
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Welcome!</DialogTitle>
+          <DialogTitle>Complete Your Profile</DialogTitle>
           <DialogDescription>
-            Please set a unique username for your profile to continue.
+            Please set a unique username and display name to continue.
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label htmlFor="username">Username</Label>
+            <Label htmlFor="username">Username <span className="text-red-500">*</span></Label>
             <Input
               id="username"
               type="text"
@@ -93,8 +95,18 @@ export function UsernameSetupModal() {
               minLength={3}
             />
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="fullName">Display Name (optional)</Label>
+            <Input
+              id="fullName"
+              type="text"
+              placeholder="e.g. Jane Doe"
+              value={fullName}
+              onChange={e => setFullName(e.target.value)}
+            />
+          </div>
           <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading ? "Saving..." : "Save Username"}
+            {isLoading ? "Saving..." : "Save Profile"}
           </Button>
         </form>
       </DialogContent>

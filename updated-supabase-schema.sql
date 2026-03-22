@@ -2,6 +2,8 @@
 CREATE TABLE public.profiles (
   id uuid PRIMARY KEY REFERENCES auth.users(id),
   username text UNIQUE,
+  full_name text,
+  avatar_url text,
   created_at timestamp without time zone DEFAULT now()
 );
 
@@ -167,10 +169,12 @@ CREATE INDEX idx_benchmark_results_tested_at ON public.benchmark_results(tested_
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger AS $$
 begin
-  insert into public.profiles (id, username)
+  insert into public.profiles (id, username, full_name, avatar_url)
   values (
     new.id,
-    coalesce(new.raw_user_meta_data->>'user_name', 'user_' || substr(new.id::text, 1, 6))
+    coalesce(new.raw_user_meta_data->>'user_name', 'user_' || substr(new.id::text, 1, 6)),
+    new.raw_user_meta_data->>'full_name',
+    new.raw_user_meta_data->>'avatar_url'
   );
   return new;
 end;

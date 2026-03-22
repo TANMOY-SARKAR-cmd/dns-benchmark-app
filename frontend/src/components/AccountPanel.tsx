@@ -13,7 +13,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import { LogOut, Link as LinkIcon } from "lucide-react";
+import { LogOut, Link as LinkIcon, Settings } from "lucide-react";
 import { ManageAccountsDialog } from "./ManageAccountsDialog";
 
 export function AccountPanel() {
@@ -41,8 +41,9 @@ export function AccountPanel() {
 
   if (!user) return null;
 
-  const displayName = profile?.username || user.email || "User";
+  const displayName = profile?.full_name || profile?.username || user.email || "User";
   const email = user.email || "";
+  const avatarUrl = profile?.avatar_url || user.user_metadata?.avatar_url;
 
   return (
     <>
@@ -51,7 +52,7 @@ export function AccountPanel() {
           <Button variant="ghost" className="relative h-8 w-8 rounded-full">
             <Avatar className="h-8 w-8">
               <AvatarImage
-                src={user.user_metadata?.avatar_url}
+                src={avatarUrl}
                 alt={displayName}
               />
               <AvatarFallback>
@@ -72,8 +73,8 @@ export function AccountPanel() {
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
             <DropdownMenuItem onClick={() => setIsManageOpen(true)}>
-              <LinkIcon className="mr-2 h-4 w-4" />
-              <span>Linked accounts</span>
+              <Settings className="mr-2 h-4 w-4" />
+              <span>Account Settings</span>
             </DropdownMenuItem>
           </DropdownMenuGroup>
           <DropdownMenuSeparator />
