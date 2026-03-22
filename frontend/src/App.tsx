@@ -7,6 +7,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import { AuthProvider } from "./contexts/AuthContext";
 import Home from "./pages/Home";
 import Account from "./pages/Account";
+import AuthCallback from "./pages/AuthCallback";
 
 function Router() {
   return (
@@ -18,6 +19,7 @@ function Router() {
       <Route path="/leaderboard" element={<Home tab="leaderboard" />} />
       <Route path="/settings" element={<Home tab="settings" />} />
       <Route path="/account" element={<Account />} />
+      <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/404" element={<NotFound />} />
       {/* Final fallback route */}
       <Route path="*" element={<NotFound />} />
