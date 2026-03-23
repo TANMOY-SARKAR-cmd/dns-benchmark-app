@@ -18,7 +18,8 @@ const DNS_IPS: Record<string, string> = {
 function resolveWithNativeDNS(
   domain: string,
   nameserver: string,
-  timeoutMs = 2500
+  timeoutMs = 2500,
+  recordType: "A" | "AAAA" = "A"
 ): Promise<number | null> {
   return new Promise(resolve => {
     const resolver = new dns.Resolver();
@@ -30,7 +31,8 @@ function resolveWithNativeDNS(
       resolve(null);
     }, timeoutMs);
 
-    resolver.resolve4(domain, err => {
+    const resolveMethod = recordType === "AAAA" ? resolver.resolve6.bind(resolver) : resolver.resolve4.bind(resolver);
+    resolveMethod(domain, err => {
       clearTimeout(timeout);
       if (err) {
         resolve(null);
@@ -69,6 +71,7 @@ interface DnsQuery {
   domain: string;
   provider: string;
   customUrl?: string;
+  recordType?: "A" | "AAAA";
 }
 
 interface DnsResult {
@@ -85,7 +88,8 @@ interface DnsResult {
 async function resolveDnsQuery(
   domain: string,
   provider: string,
-  customUrl?: string
+  customUrl?: string,
+  recordType: "A" | "AAAA" = "A"
 ): Promise<DnsResult> {
   const base: Omit<DnsResult, "success" | "latency" | "error" | "method"> = {
     domain,
@@ -96,7 +100,7 @@ async function resolveDnsQuery(
   let method: DnsResult["method"] = "failed";
 
   if (udpIp) {
-    const nativeLatency = await resolveWithNativeDNS(domain, udpIp);
+    const nativeLatency = await resolveWithNativeDNS(domain, udpIp, 2500, recordType);
     if (nativeLatency !== null) {
       method = "server-udp";
       const result: DnsResult = {
@@ -122,7 +126,7 @@ async function resolveDnsQuery(
 
   try {
     const response = await fetch(
-      `${url}?name=${encodeURIComponent(domain)}&type=A`,
+      `${url}?name=${encodeURIComponent(domain)}&type=${recordType}`,
       {
         method: "GET",
         headers: { accept: "application/dns-json" },
@@ -309,6 +313,7 @@ export async function POST(request: Request) {
       domain: q.domain.trim(),
       provider: providerLower,
       customUrl: q.customUrl,
+      recordType: q.recordType === "AAAA" ? "AAAA" : "A",
     };
   }
 
@@ -327,7 +332,7 @@ export async function POST(request: Request) {
     const chunk = queries.slice(i, i + CHUNK_SIZE);
 
     const settled = await Promise.allSettled(
-      chunk.map(q => resolveDnsQuery(q.domain, q.provider, q.customUrl))
+      chunk.map(q => resolveDnsQuery(q.domain, q.provider, q.customUrl, q.recordType))
     );
 
     for (const outcome of settled) {
