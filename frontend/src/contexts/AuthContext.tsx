@@ -76,9 +76,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .single()
             .then(({ data: profileData }) => {
               setProfile(profileData);
+              setIsLoading(false);
             });
         } else {
           setProfile(null);
+          setIsLoading(false);
         }
       }
     );
