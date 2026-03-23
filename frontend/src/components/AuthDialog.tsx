@@ -80,6 +80,7 @@ export function AuthDialog() {
       // @ts-ignore - Supabase types might not include signInWithWeb3 yet
       const { error } = await supabase.auth.signInWithWeb3({
         chain: "ethereum",
+        statement: 'Sign in to the app'
       });
 
       if (error) {
