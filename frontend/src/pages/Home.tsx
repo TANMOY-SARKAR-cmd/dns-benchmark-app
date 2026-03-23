@@ -2,6 +2,13 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import {
   Card,
@@ -72,6 +79,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
   const { user } = useAuth();
   const userId = user?.id || "anonymous";
   const [domainsInput, setDomainsInput] = useState("");
+  const [recordType, setRecordType] = useState<"A" | "AAAA">("A");
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [progressText, setProgressText] = useState("");
@@ -826,11 +834,25 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
     const domains = rawDomains.filter(d => VALID_DOMAIN_PATTERN.test(d));
     const invalid = rawDomains.filter(d => !VALID_DOMAIN_PATTERN.test(d));
 
+    const validDomains = domains.filter(d => d.length <= 253);
+    const tooLong = domains.filter(d => d.length > 253);
+
+    if (tooLong.length > 0) {
+      toast.warning(
+        `Skipped ${tooLong.length} domain(s) exceeding max length (253 chars)`
+      );
+    }
+
     if (invalid.length > 0) {
       toast.warning(
         `Skipped ${invalid.length} invalid entr${invalid.length === 1 ? "y" : "ies"}: ${invalid.slice(0, 3).join(", ")}${invalid.length > 3 ? "…" : ""}`
       );
     }
+
+    // Update domains to only use valid ones
+    domains.length = 0;
+    domains.push(...validDomains);
+
 
     if (domains.length === 0) {
       toast.error("Please enter at least one valid domain");
@@ -1227,6 +1249,19 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
                       className="min-h-32 resize-none font-mono text-sm"
                       disabled={isLoading}
                     />
+                    <div className="flex gap-4 mt-4">
+                      <div className="w-1/3">
+                        <Select value={recordType} onValueChange={(v: "A"|"AAAA") => setRecordType(v)} disabled={isLoading}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Record Type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="A">IPv4 (A)</SelectItem>
+                            <SelectItem value="AAAA">IPv6 (AAAA)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
                     <div className="flex flex-col sm:flex-row gap-4 mt-4">
                       <Button
                         variant="outline"
@@ -1324,7 +1359,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
                               strokeDasharray="3 3"
                               opacity={0.2}
                             />
-                            <XAxis dataKey="domain" tick={{ fontSize: 12 }} />
+                            <XAxis dataKey="domain" tick={{ fontSize: 12 }} angle={-45} textAnchor="end" height={80} interval={0} />
                             <YAxis tick={{ fontSize: 12 }} />
                             <Tooltip
                               contentStyle={{
@@ -1765,9 +1800,53 @@ cloudflare.com"
 
           <TabsContent value="history">
             <Card>
-              <CardHeader>
-                <CardTitle>Recent Benchmarks</CardTitle>
-                <CardDescription>Last 100 benchmark runs</CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle>Recent Benchmarks</CardTitle>
+                  <CardDescription>Last 100 benchmark runs</CardDescription>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (history.length === 0) return;
+                      const csv = Papa.unparse(history);
+                      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                      const url = URL.createObjectURL(blob);
+                      const link = document.createElement("a");
+                      link.href = url;
+                      link.setAttribute("download", "dns_benchmark_history.csv");
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      URL.revokeObjectURL(url);
+                    }}
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Export CSV
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (history.length === 0) return;
+                      const json = JSON.stringify(history, null, 2);
+                      const blob = new Blob([json], { type: "application/json;charset=utf-8;" });
+                      const url = URL.createObjectURL(blob);
+                      const link = document.createElement("a");
+                      link.href = url;
+                      link.setAttribute("download", "dns_benchmark_history.json");
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                      URL.revokeObjectURL(url);
+                    }}
+                  >
+                    <Download className="w-4 h-4 mr-2" />
+                    Export JSON
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {!isSupabaseConfigured ? (

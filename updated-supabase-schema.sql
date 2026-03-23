@@ -231,10 +231,10 @@ BEGIN
                 ((1.0 / NULLIF(AVG(latency_ms) FILTER (WHERE success = true), 0)) * 0.25) +
                 (LOG(COUNT(*) + 1) * 0.15)
             ) as reliability_score,
-            SUM(CASE WHEN method = 'server-udp' THEN 1 ELSE 0 END)::FLOAT / COUNT(*) * 100 as udp_percentage,
-            SUM(CASE WHEN method = 'server-doh' THEN 1 ELSE 0 END)::FLOAT / COUNT(*) * 100 as doh_percentage,
-            SUM(CASE WHEN method = 'fallback' THEN 1 ELSE 0 END)::FLOAT / COUNT(*) * 100 as fallback_percentage,
-            SUM(CASE WHEN method = 'failed' OR success = false THEN 1 ELSE 0 END)::FLOAT / COUNT(*) * 100 as failure_percentage,
+            SUM(CASE WHEN method = 'server-udp' THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT(*), 0) * 100 as udp_percentage,
+            SUM(CASE WHEN method = 'server-doh' THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT(*), 0) * 100 as doh_percentage,
+            SUM(CASE WHEN method = 'fallback' THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT(*), 0) * 100 as fallback_percentage,
+            SUM(CASE WHEN method = 'failed' OR success = false THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT(*), 0) * 100 as failure_percentage,
             NOW() as last_updated
         FROM combined_results
         GROUP BY provider

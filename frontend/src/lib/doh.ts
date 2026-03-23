@@ -91,12 +91,13 @@ type MethodResult = {
 
 async function jsonQuery(
   provider: DoHProvider,
-  domain: string
+  domain: string,
+  recordType: "A" | "AAAA" = "A"
 ): Promise<MethodResult> {
   try {
     const url = new URL(provider.url);
     url.searchParams.set("name", domain);
-    url.searchParams.set("type", "A");
+    url.searchParams.set("type", recordType);
 
     const { response, latency } = await fetchWithTimeout(url.toString(), {
       method: "GET",
@@ -121,7 +122,8 @@ async function jsonQuery(
 
 async function binaryGetQuery(
   provider: DoHProvider,
-  domain: string
+  domain: string,
+  recordType: "A" | "AAAA" = "A"
 ): Promise<MethodResult> {
   try {
     const packet = dnsPacket.encode({
@@ -130,7 +132,7 @@ async function binaryGetQuery(
       flags: dnsPacket.RECURSION_DESIRED,
       questions: [
         {
-          type: "A",
+          type: recordType,
           name: domain,
         },
       ],
@@ -175,7 +177,8 @@ async function binaryGetQuery(
 
 async function binaryPostQuery(
   provider: DoHProvider,
-  domain: string
+  domain: string,
+  recordType: "A" | "AAAA" = "A"
 ): Promise<MethodResult> {
   try {
     const packet = dnsPacket.encode({
@@ -184,7 +187,7 @@ async function binaryPostQuery(
       flags: dnsPacket.RECURSION_DESIRED,
       questions: [
         {
-          type: "A",
+          type: recordType,
           name: domain,
         },
       ],
@@ -237,7 +240,8 @@ export type ResolveDNSResult = {
 
 async function resolveClientDNS(
   domain: string,
-  provider: DoHProvider
+  provider: DoHProvider,
+  recordType: "A" | "AAAA" = "A"
 ): Promise<ResolveDNSResult> {
   const isCustom = !DOH_PROVIDERS.some(p => p.name === provider.name);
   const controller = new AbortController();
@@ -258,8 +262,8 @@ async function resolveClientDNS(
     };
 
     const raceResult = await Promise.race([
-      wrapMethod(jsonQuery(provider, domain)),
-      wrapMethod(binaryGetQuery(provider, domain)),
+      wrapMethod(jsonQuery(provider, domain, recordType)),
+      wrapMethod(binaryGetQuery(provider, domain, recordType)),
       new Promise<MethodResult>((_, reject) => {
         const abortHandler = () => reject(new Error("Timeout"));
         if (controller.signal.aborted) {
@@ -296,7 +300,8 @@ async function resolveClientDNS(
 export async function measureClientDoH(
   provider: DoHProvider,
   domain: string,
-  retries = 3
+  retries = 3,
+  recordType: "A" | "AAAA" = "A"
 ): Promise<BenchmarkResult> {
   const latencies: number[] = [];
   let successCount = 0;
@@ -305,7 +310,7 @@ export async function measureClientDoH(
   const startTime = performance.now();
 
   const promises = Array.from({ length: retries }).map(async () => {
-    const res = await resolveClientDNS(domain, provider);
+    const res = await resolveClientDNS(domain, provider, recordType);
 
     if (res.success) {
       successCount++;
@@ -350,7 +355,8 @@ export async function measureClientDoH(
 
 async function resolveDNS(
   domain: string,
-  provider: DoHProvider
+  provider: DoHProvider,
+  recordType: "A" | "AAAA" = "A"
 ): Promise<ResolveDNSResult> {
   let serverResult: any = null;
   const isCustom = !DOH_PROVIDERS.some(p => p.name === provider.name);
@@ -365,6 +371,7 @@ async function resolveDNS(
           domain,
           provider: isCustom ? "custom" : provider.key,
           customUrl: isCustom ? provider.url : undefined,
+          recordType,
         }),
       }
     );
@@ -388,7 +395,7 @@ async function resolveDNS(
     };
   } else {
     // Only then run client fallback
-    const clientResult = await resolveClientDNS(domain, provider);
+    const clientResult = await resolveClientDNS(domain, provider, recordType);
 
     if (clientResult.success) {
       return {
@@ -410,7 +417,8 @@ async function resolveDNS(
 export async function measureDoHBatch(
   domains: string[],
   provider: DoHProvider,
-  retries = 3
+  retries = 3,
+  recordType: "A" | "AAAA" = "A"
 ): Promise<Record<string, BenchmarkResult>> {
   const results: Record<string, BenchmarkResult> = {};
   const allQueries: { domain: string; provider: string }[] = [];
@@ -423,12 +431,13 @@ export async function measureDoHBatch(
         domain,
         provider: isCustom ? "custom" : provider.key,
         ...(isCustom ? { customUrl: provider.url } : {}),
+        recordType,
       } as any);
     }
   }
 
   try {
-    const url = new URL("/api/dns-query", window.location.origin);
+    const url = new URL("/api/dns-query", typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
     const start = performance.now();
 
     const response = await fetch(url.toString(), {
@@ -496,7 +505,7 @@ export async function measureDoHBatch(
   const missingDomains = domains.filter(d => !results[d] || results[d].successRate === 0);
   for (const domain of missingDomains) {
     try {
-      const fallbackResult = await measureDoH(provider, domain, retries);
+      const fallbackResult = await measureDoH(provider, domain, retries, recordType);
       if (fallbackResult && fallbackResult.method !== "failed") {
           results[domain] = {
               ...fallbackResult,
@@ -532,7 +541,8 @@ export async function measureDoHBatch(
 export async function measureDoH(
   provider: DoHProvider,
   domain: string,
-  retries = 3
+  retries = 3,
+  recordType: "A" | "AAAA" = "A"
 ): Promise<BenchmarkResult> {
   const latencies: number[] = [];
   let successCount = 0;
@@ -542,7 +552,7 @@ export async function measureDoH(
   const startTime = performance.now();
 
   const promises = Array.from({ length: retries }).map(async () => {
-    const res = await resolveDNS(domain, provider);
+    const res = await resolveDNS(domain, provider, recordType);
 
     if (res.success) {
       successCount++;
