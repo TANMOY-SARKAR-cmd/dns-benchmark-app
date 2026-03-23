@@ -22,10 +22,19 @@ export default function AuthCallback() {
         }
 
         const code = searchParams.get("code");
+        const accessToken = hashParams.get("access_token");
+        const refreshToken = hashParams.get("refresh_token");
 
         if (code) {
           // PKCE flow
           const { error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) throw error;
+        } else if (accessToken && refreshToken) {
+          // Manually set session if tokens are in hash
+          const { error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          });
           if (error) throw error;
         } else {
           // Implicit flow handles sessions automatically via the Supabase client
