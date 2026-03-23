@@ -18,6 +18,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   measureDoH,
@@ -62,6 +63,15 @@ import { useAuth } from "@/contexts/AuthContext";
 import { AuthButton } from "@/components/AuthButton";
 import { measureDoHBatch } from "@/lib/doh";
 import { toast } from "sonner";
+
+import { BenchmarkTab } from "./tabs/BenchmarkTab";
+import { HistoryTab } from "./tabs/HistoryTab";
+import { LeaderboardTab } from "./tabs/LeaderboardTab";
+import { MonitorsTab } from "./tabs/MonitorsTab";
+import { LiveLogsTab } from "./tabs/LiveLogsTab";
+import { SettingsTab } from "./tabs/SettingsTab";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+
 
 export default function Home({ tab = "benchmark" }: { tab?: string }) {
   const navigate = useNavigate();
@@ -108,6 +118,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
   const [history, setHistory] = useState<any[]>([]);
   const [liveLogs, setLiveLogs] = useState<any[]>([]);
   const [session, setSession] = useState<any>(null);
+  const [isFetchingData, setIsFetchingData] = useState(true);
 
   // Monitors
   const [monitors, setMonitors] = useState<any[]>([]);
@@ -145,6 +156,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
     fetchLeaderboard();
     fetchHistory();
     fetchPersonalBest();
+    setIsFetchingData(false);
 
     // Subscribe to live logs
     const channel = sb
@@ -587,14 +599,14 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
     try {
       const { data: monitorData, error: monitorError } = await supabase
         .from("monitor_results")
-        .select("provider, latency_ms, success")
+        .select("provider, latency_ms, success, method")
         .eq("user_id", user.id);
 
       if (monitorError) throw monitorError;
 
       const { data: benchmarkData, error: benchmarkError } = await supabase
         .from("benchmark_results")
-        .select("provider, latency_ms, success")
+        .select("provider, latency_ms, success, method")
         .eq("user_id", user.id);
 
       if (benchmarkError) throw benchmarkError;
@@ -606,16 +618,22 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
         return;
       }
 
-      const agg: Record<
-        string,
-        { latencies: number[]; successCount: number; total: number }
-      > = {};
+      const agg: Record<string, { latencies: number[]; successCount: number; total: number; udp: number; doh: number; fallback: number; failed: number }> = {};
 
       for (const row of allData) {
         if (!agg[row.provider]) {
-          agg[row.provider] = { latencies: [], successCount: 0, total: 0 };
+          agg[row.provider] = { latencies: [], successCount: 0, total: 0, udp: 0, doh: 0, fallback: 0, failed: 0 };
         }
         agg[row.provider].total += 1;
+          if (row.method === "server-udp") {
+            agg[row.provider].udp += 1;
+          } else if (row.method === "server-doh") {
+            agg[row.provider].doh += 1;
+          } else if (row.method === "fallback") {
+            agg[row.provider].fallback += 1;
+          } else if (row.method === "failed" || !row.success) {
+            agg[row.provider].failed += 1;
+          }
         if (row.success) {
           agg[row.provider].successCount += 1;
           if (row.latency_ms !== null) {
@@ -679,7 +697,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
 
         const { data, error } = await supabase
           .from("dns_queries")
-          .select("provider, latency_ms, success")
+          .select("provider, latency_ms, success, method")
           .eq("user_id", user.id)
           .gte("tested_at", thirtyDaysAgo.toISOString());
 
@@ -689,15 +707,21 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
         }
 
         // Aggregate data manually
-        const agg: Record<
-          string,
-          { latencies: number[]; successCount: number; total: number }
-        > = {};
+        const agg: Record<string, { latencies: number[]; successCount: number; total: number; udp: number; doh: number; fallback: number; failed: number }> = {};
         for (const row of data || []) {
           if (!agg[row.provider]) {
-            agg[row.provider] = { latencies: [], successCount: 0, total: 0 };
+            agg[row.provider] = { latencies: [], successCount: 0, total: 0, udp: 0, doh: 0, fallback: 0, failed: 0 };
           }
           agg[row.provider].total += 1;
+          if (row.method === "server-udp") {
+            agg[row.provider].udp += 1;
+          } else if (row.method === "server-doh") {
+            agg[row.provider].doh += 1;
+          } else if (row.method === "fallback") {
+            agg[row.provider].fallback += 1;
+          } else if (row.method === "failed" || !row.success) {
+            agg[row.provider].failed += 1;
+          }
           if (row.success) {
             agg[row.provider].successCount += 1;
             if (row.latency_ms !== null) {
@@ -727,12 +751,29 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
             jitter = avg_latency;
           }
 
+          const udp_percentage = (stats.udp / Math.max(stats.total, 1)) * 100;
+          const doh_percentage = (stats.doh / Math.max(stats.total, 1)) * 100;
+          const fallback_percentage = (stats.fallback / Math.max(stats.total, 1)) * 100;
+          const failure_percentage = (stats.failed / Math.max(stats.total, 1)) * 100;
+
+          let stability_status = "Stable";
+          if (failure_percentage > 20 || fallback_percentage > 30 || (jitter !== null && jitter > 50)) {
+            stability_status = "Unreliable";
+          } else if (failure_percentage > 10 || fallback_percentage > 15 || (jitter !== null && jitter > 25)) {
+            stability_status = "Unstable";
+          }
+
           return {
             provider,
             avg_latency,
             success_rate,
             jitter,
             total_tests: stats.total,
+            udp_percentage,
+            doh_percentage,
+            fallback_percentage,
+            failure_percentage,
+            stability_status,
           };
         });
       } else {
@@ -887,7 +928,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
           const isCustom = !DOH_PROVIDERS.some(dp => dp.name === p.name);
           return {
             domain,
-            provider: isCustom ? "custom" : p.name,
+            provider: isCustom ? "custom" : p.key,
             customUrl: isCustom ? p.url : undefined,
           };
         });
@@ -947,12 +988,12 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
 
         // Second pass: run client fallback concurrently only for failed providers
         if (failedProviders.length > 0) {
+          toast.warning(
+            `Backend failed for ${failedProviders.length} provider(s), using client fallback`
+          );
           const fallbackResults = await Promise.all(
             failedProviders.map(async provider => {
               try {
-                toast.warning(
-                  `Backend failed for ${provider.name}, using fallback`
-                );
                 const fallbackResult = await measureClientDoH(provider, domain);
                 return { provider, result: fallbackResult };
               } catch (error) {
@@ -961,13 +1002,17 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
             })
           );
 
+          let totalFailed = 0;
           for (const { provider, result } of fallbackResults) {
             results[domain][provider.name] = result;
             if (result === "Error" || result.successRate === 0) {
-              toast.error(
-                `All methods failed for ${provider.name} on ${domain}`
-              );
+              totalFailed++;
             }
+          }
+          if (totalFailed > 0) {
+            toast.error(
+              `All methods failed for ${totalFailed} provider(s) on ${domain}`
+            );
           }
         }
 
@@ -1163,7 +1208,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
         </div>
 
         <Tabs value={tab} onValueChange={(val) => { if (val === "benchmark") navigate("/"); else navigate("/" + val); }} className="space-y-8">
-          <TabsList className="flex flex-wrap sm:grid sm:grid-cols-5 md:w-auto h-auto min-h-10">
+          <TabsList className="flex overflow-x-auto flex-nowrap w-full sm:grid sm:grid-cols-6 md:w-auto h-auto min-h-10">
             <TabsTrigger value="benchmark" className="flex items-center gap-2">
               <Play className="w-4 h-4" /> Benchmark
             </TabsTrigger>
@@ -1190,1121 +1235,84 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
           </TabsList>
 
           <TabsContent value="benchmark" className="space-y-8">
-            {user && personalBest && (
-              <div className="mb-8">
-                <h2 className="text-xl font-bold mb-4">Your Best DNS</h2>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/50 dark:to-indigo-950/50 border-blue-100 dark:border-blue-900 shadow-sm">
-                    <CardContent className="p-6 flex items-center gap-4">
-                      <div className="p-3 bg-blue-100 dark:bg-blue-900 rounded-full text-blue-600 dark:text-blue-400">
-                        <Star className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Recommended DNS for you</p>
-                        <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">{personalBest.recommended.provider}</h3>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card className="bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/50 dark:to-teal-950/50 border-emerald-100 dark:border-emerald-900 shadow-sm">
-                    <CardContent className="p-6 flex items-center gap-4">
-                      <div className="p-3 bg-emerald-100 dark:bg-emerald-900 rounded-full text-emerald-600 dark:text-emerald-400">
-                        <ShieldCheck className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Most reliable DNS</p>
-                        <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">{personalBest.mostReliable.provider}</h3>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  <Card className="bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/50 dark:to-orange-950/50 border-amber-100 dark:border-amber-900 shadow-sm">
-                    <CardContent className="p-6 flex items-center gap-4">
-                      <div className="p-3 bg-amber-100 dark:bg-amber-900 rounded-full text-amber-600 dark:text-amber-400">
-                        <Zap className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Fastest DNS</p>
-                        <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">{personalBest.fastest.provider}</h3>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              </div>
-            )}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Input Section */}
-              <div className="md:col-span-2">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Enter Domains to Test</CardTitle>
-                    <CardDescription>
-                      Enter one or more domains separated by commas or new
-                      lines. Supports up to 100 domains.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <Textarea
-                      placeholder="google.com&#10;github.com&#10;youtube.com"
-                      value={domainsInput}
-                      onChange={e => setDomainsInput(e.target.value)}
-                      className="min-h-32 resize-none font-mono text-sm"
-                      disabled={isLoading}
-                    />
-                    <div className="flex gap-4 mt-4">
-                      <div className="w-1/3">
-                        <Select value={recordType} onValueChange={(v: "A"|"AAAA") => setRecordType(v)} disabled={isLoading}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Record Type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="A">IPv4 (A)</SelectItem>
-                            <SelectItem value="AAAA">IPv6 (AAAA)</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div className="flex flex-col sm:flex-row gap-4 mt-4">
-                      <Button
-                        variant="outline"
-                        onClick={handleUsePopular}
-                        disabled={isLoading}
-                        className="flex-1"
-                      >
-                        Use Popular Domains
-                      </Button>
-                      <Button
-                        onClick={handleTest}
-                        disabled={isLoading}
-                        className="flex-1"
-                      >
-                        {isLoading ? (
-                          <>
-                            <span className="animate-spin mr-2">⏳</span>{" "}
-                            Running...
-                          </>
-                        ) : (
-                          <>
-                            <Play className="w-4 h-4 mr-2" /> Run DNS Test
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Providers Section */}
-              <div>
-                <Card className="h-full">
-                  <CardHeader>
-                    <CardTitle>DNS Providers</CardTitle>
-                    <CardDescription>Using DNS-over-HTTPS</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {userProviders.map(provider => (
-                      <div
-                        key={provider.name}
-                        className="flex items-center gap-3"
-                      >
-                        <div
-                          className="w-3 h-3 rounded-full"
-                          style={{ backgroundColor: provider.color }}
-                        />
-                        <span className="font-semibold">{provider.name}</span>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              </div>
-            </div>
-
-            <div className="text-center py-4 bg-blue-50/50 dark:bg-blue-900/10 rounded-lg border border-blue-100 dark:border-blue-900/50">
-              <p className="text-sm text-blue-800 dark:text-blue-300 flex items-center justify-center gap-2">
-                ✅ Fully client-side DoH benchmarking – works instantly in any
-                browser. No server required.
-              </p>
-            </div>
-
-            {/* Progress UI */}
-            {isLoading && (
-              <Card>
-                <CardContent className="pt-6 space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-600 dark:text-slate-400">
-                      {progressText || "Initializing..."}
-                    </span>
-                    <span className="font-semibold">{progress}%</span>
-                  </div>
-                  <Progress value={progress} className="h-2" />
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Results Section */}
-            {testResults && !isLoading && (
-              <div className="space-y-8">
-                {/* Chart */}
-                {chartData.length > 0 && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>Latency Comparison (ms)</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="h-[400px] w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart
-                            data={chartData}
-                            margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
-                          >
-                            <CartesianGrid
-                              strokeDasharray="3 3"
-                              opacity={0.2}
-                            />
-                            <XAxis dataKey="domain" tick={{ fontSize: 12 }} angle={-45} textAnchor="end" height={80} interval={0} />
-                            <YAxis tick={{ fontSize: 12 }} />
-                            <Tooltip
-                              contentStyle={{
-                                backgroundColor:
-                                  theme === "dark" ? "#1e293b" : "#fff",
-                                borderColor:
-                                  theme === "dark" ? "#334155" : "#e2e8f0",
-                                color: theme === "dark" ? "#f8fafc" : "#0f172a",
-                              }}
-                            />
-                            <Legend />
-                            {userProviders.map(provider => (
-                              <Bar
-                                key={provider.name}
-                                dataKey={provider.name}
-                                fill={provider.color}
-                                radius={[4, 4, 0, 0]}
-                              />
-                            ))}
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-
-                {/* Table */}
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between">
-                    <CardTitle>Detailed Results</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm text-left">
-                        <thead>
-                          <tr className="border-b dark:border-slate-800">
-                            <th className="py-3 px-4 font-semibold">Domain</th>
-                            <th className="py-3 px-4 font-semibold">
-                              Provider
-                            </th>
-                            <th className="py-3 px-4 font-semibold text-center">
-                              Latency
-                            </th>
-                            <th className="py-3 px-4 font-semibold text-center">
-                              Method
-                            </th>
-                            <th className="py-3 px-4 font-semibold text-center">
-                              Status
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {Object.entries(testResults).flatMap(
-                            ([domain, results]) =>
-                              userProviders.map(provider => {
-                                const result = results[provider.name];
-                                const isError =
-                                  result === "Error" ||
-                                  !result ||
-                                  result.successRate === 0;
-
-                                let badgeColor =
-                                  "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-400";
-                                let badgeText = "-";
-
-                                if (
-                                  isError ||
-                                  (result && result.method === "failed")
-                                ) {
-                                  badgeColor =
-                                    "bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-400";
-                                  badgeText = "Failed";
-                                } else if (
-                                  result &&
-                                  (result.method === "server-udp" ||
-                                    result.method === "server-doh")
-                                ) {
-                                  badgeColor =
-                                    "bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400";
-                                  badgeText = "Server";
-                                } else if (
-                                  result &&
-                                  result.method === "fallback"
-                                ) {
-                                  badgeColor =
-                                    "bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400";
-                                  badgeText = "Client Fallback";
-                                }
-
-                                return (
-                                  <tr
-                                    key={`${domain}-${provider.name}`}
-                                    className="border-b dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                                  >
-                                    <td className="py-3 px-4 font-mono">
-                                      {domain}
-                                    </td>
-                                    <td className="py-3 px-4 font-semibold">
-                                      {provider.name}
-                                    </td>
-                                    <td className="py-3 px-4 text-center">
-                                      {isError ? (
-                                        "-"
-                                      ) : (
-                                        <span className="font-semibold">
-                                          {result.avgLatency}ms
-                                        </span>
-                                      )}
-                                    </td>
-                                    <td className="py-3 px-4 text-center">
-                                      <div
-                                        className={`text-[10px] inline-flex px-2 py-1 rounded font-mono font-medium ${badgeColor}`}
-                                      >
-                                        {badgeText}
-                                        {}
-                                      </div>
-                                    </td>
-                                    <td className="py-3 px-4 text-center">
-                                      {isError ? (
-                                        <span className="text-red-500 flex items-center justify-center gap-1 text-xs">
-                                          ❌ Failed
-                                        </span>
-                                      ) : (
-                                        <span className="text-green-500 flex items-center justify-center gap-1 text-xs">
-                                          ✅ Success ({result.successRate}%)
-                                        </span>
-                                      )}
-                                    </td>
-                                  </tr>
-                                );
-                              })
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
+            <ErrorBoundary>
+            <BenchmarkTab
+              user={user}
+              personalBest={personalBest}
+              domainsInput={domainsInput}
+              setDomainsInput={setDomainsInput}
+              recordType={recordType}
+              setRecordType={setRecordType}
+              isLoading={isLoading}
+              handleUsePopular={handleUsePopular}
+              handleTest={handleTest}
+              userProviders={userProviders}
+              progressText={progressText}
+              progress={progress}
+              testResults={testResults}
+              chartData={chartData}
+            />
+            </ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="monitors">
-            <Card>
-              <CardHeader>
-                <CardTitle>Continuous Monitoring</CardTitle>
-                <CardDescription>
-                  Set up background tests to monitor your favorite domains over
-                  time.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {!isSupabaseConfigured ? (
-                  <div className="text-center py-8 text-slate-500 flex flex-col items-center gap-2">
-                    <AlertCircle className="w-6 h-6 text-yellow-500" />
-                    <p>Continuous monitoring requires Supabase.</p>
-                  </div>
-                ) : !user ? (
-                  <div className="text-center py-8 text-slate-500 flex flex-col items-center gap-2">
-                    <AlertCircle className="w-6 h-6 text-blue-500" />
-                    <p>Please log in to set up background monitors.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-8">
-                    <form
-                      onSubmit={handleCreateMonitor}
-                      className="space-y-4 bg-slate-50 dark:bg-slate-900/50 p-4 rounded-lg border border-slate-200 dark:border-slate-800"
-                    >
-                      <div className="grid gap-4 md:grid-cols-4">
-                        <div className="md:col-span-3">
-                          <label className="text-sm font-medium mb-1.5 block">
-                            Domains to monitor (one per line)
-                          </label>
-                          <Textarea
-                            value={monitorDomains}
-                            onChange={e => setMonitorDomains(e.target.value)}
-                            placeholder="e.g. google.com
-cloudflare.com"
-                            className="font-mono text-sm resize-none"
-                            rows={3}
-                            required
-                          />
-                        </div>
-                        <div className="flex flex-col justify-between">
-                          <div>
-                            <label className="text-sm font-medium mb-1.5 block">
-                              Interval
-                            </label>
-                            <select
-                              value={monitorInterval}
-                              onChange={e =>
-                                setMonitorInterval(Number(e.target.value))
-                              }
-                              className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-800 dark:bg-slate-950 dark:ring-offset-slate-950 dark:focus-visible:ring-slate-300"
-                            >
-                              <option value={10}>10 seconds</option>
-                              <option value={30}>30 seconds</option>
-                              <option value={60}>1 minute</option>
-                              <option value={300}>5 minutes</option>
-                            </select>
-                          </div>
-                          <Button
-                            type="submit"
-                            disabled={isCreatingMonitor}
-                            className="w-full mt-2"
-                          >
-                            Create Monitor
-                          </Button>
-                        </div>
-                      </div>
-                    </form>
-
-                    {monitors.length > 0 ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                        {monitors.map(monitor => (
-                          <Card key={monitor.id} className="bg-card">
-                            <CardContent className="pt-6">
-                              <div className="flex items-start justify-between">
-                                <div className="space-y-2">
-                                  <div className="flex items-center gap-2">
-                                    <Globe className="w-4 h-4 text-muted-foreground" />
-                                    <span className="font-medium">
-                                      {monitor.domains.join(", ")}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                    <Server className="w-4 h-4" />
-                                    <span>{monitor.providers.join(", ")}</span>
-                                  </div>
-                                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                    <Clock className="w-4 h-4" />
-                                    <span>
-                                      Runs every {monitor.interval_seconds / 60}{" "}
-                                      minutes
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                    <History className="w-4 h-4" />
-                                    <span
-                                      className={
-                                        monitor.is_active
-                                          ? "text-green-500 font-medium"
-                                          : "text-slate-500"
-                                      }
-                                    >
-                                      {monitor.is_active ? "Active" : "Stopped"}
-                                    </span>
-                                    {monitorResults[monitor.id] && (
-                                      <span className="ml-2 text-xs flex items-center gap-1">
-                                        |{" "}
-                                        {monitorResults[monitor.id].success ? (
-                                          <span className="text-green-500">
-                                            Success
-                                          </span>
-                                        ) : (
-                                          <span className="text-red-500">
-                                            Failed
-                                          </span>
-                                        )}
-                                        |{" "}
-                                        <span className="uppercase text-slate-500">
-                                          {monitorResults[monitor.id].method}
-                                        </span>
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => toggleMonitor(monitor)}
-                                    className={
-                                      monitor.is_active
-                                        ? "text-amber-500 hover:text-amber-600 hover:bg-amber-500/10"
-                                        : "text-green-500 hover:text-green-600 hover:bg-green-500/10"
-                                    }
-                                    title={
-                                      monitor.is_active
-                                        ? "Stop Monitor"
-                                        : "Start Monitor"
-                                    }
-                                  >
-                                    {monitor.is_active ? (
-                                      <Square
-                                        className="w-4 h-4"
-                                        fill="currentColor"
-                                      />
-                                    ) : (
-                                      <Play
-                                        className="w-4 h-4"
-                                        fill="currentColor"
-                                      />
-                                    )}
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() =>
-                                      handleDeleteMonitor(monitor.id)
-                                    }
-                                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </Button>
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center justify-center p-8 text-center bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-dashed border-slate-200 dark:border-slate-800">
-                        <Activity className="w-10 h-10 text-slate-300 dark:text-slate-600 mb-3" />
-                        <h4 className="text-sm font-medium text-slate-900 dark:text-slate-200">
-                          No active monitors
-                        </h4>
-                        <p className="text-sm text-slate-500 mt-1 max-w-sm">
-                          Set up continuous monitoring to automatically track
-                          domain resolution performance over time.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <ErrorBoundary>
+            <MonitorsTab
+              user={user}
+              monitors={monitors}
+              monitorResults={monitorResults}
+              isCreatingMonitor={isCreatingMonitor}
+              handleCreateMonitor={handleCreateMonitor}
+              monitorDomains={monitorDomains}
+              setMonitorDomains={setMonitorDomains}
+              monitorInterval={monitorInterval}
+              setMonitorInterval={setMonitorInterval}
+              toggleMonitor={toggleMonitor}
+              handleDeleteMonitor={handleDeleteMonitor}
+              isFetchingData={isFetchingData}
+            />
+            </ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="logs">
-            <Card>
-              <CardHeader>
-                <CardTitle>Live Query Logs</CardTitle>
-                <CardDescription>
-                  Real-time stream of DNS tests happening globally
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {!isSupabaseConfigured ? (
-                  <div className="text-center py-8 text-slate-500 flex flex-col items-center gap-2">
-                    <AlertCircle className="w-6 h-6 text-yellow-500" />
-                    <p>
-                      Live logs require Supabase. Configure{" "}
-                      <code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 rounded">
-                        VITE_SUPABASE_URL
-                      </code>{" "}
-                      and{" "}
-                      <code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 rounded">
-                        VITE_SUPABASE_ANON_KEY
-                      </code>{" "}
-                      to enable this feature.
-                    </p>
-                  </div>
-                ) : !user ? (
-                  <div className="text-center py-8 text-slate-500 flex flex-col items-center gap-2">
-                    <AlertCircle className="w-6 h-6 text-blue-500" />
-                    <p>Please log in to view live logs.</p>
-                  </div>
-                ) : liveLogs.length === 0 ? (
-                  <div className="text-center py-8 text-slate-500">
-                    Waiting for queries... Run a benchmark to see live results
-                    here.
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {liveLogs.map((log, i) => {
-                      const rawTimestamp = log.timestamp || log.tested_at;
-                      const date = rawTimestamp ? new Date(rawTimestamp) : null;
-                      const timeLabel =
-                        date && !isNaN(date.getTime())
-                          ? date.toLocaleTimeString()
-                          : "—";
-                      return (
-                        <div
-                          key={i}
-                          className="flex justify-between items-center p-3 bg-slate-100 dark:bg-slate-900 rounded-md text-sm"
-                        >
-                          <div className="flex items-center gap-4">
-                            <span className="font-mono text-slate-500">
-                              {timeLabel}
-                            </span>
-                            <span className="font-semibold">
-                              {log.upstream_provider}
-                            </span>
-                            <span className="font-mono">{log.domain}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {(log.method || log.method_used) === "client" ||
-                            (log.method || log.method_used) === "fallback" ||
-                            (log.method || log.method_used) ===
-                              "client-fallback" ? (
-                              <span className="text-[10px] bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-400 px-1.5 py-0.5 rounded font-mono font-medium">
-                                fallback
-                              </span>
-                            ) : (log.method || log.method_used) ===
-                                "server-udp" ||
-                              (log.method || log.method_used) === "server" ? (
-                              <span className="text-[10px] bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400 px-1.5 py-0.5 rounded font-mono font-medium">
-                                server-udp
-                              </span>
-                            ) : (log.method || log.method_used) ===
-                              "server-doh" ? (
-                              <span className="text-[10px] bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400 px-1.5 py-0.5 rounded font-mono font-medium">
-                                server-doh
-                              </span>
-                            ) : (log.method || log.method_used) === "failed" ? (
-                              <span className="text-[10px] bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-400 px-1.5 py-0.5 rounded font-mono font-medium">
-                                failed
-                              </span>
-                            ) : (
-                              <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-400 px-1.5 py-0.5 rounded font-mono font-medium">
-                                {log.method || log.method_used}
-                              </span>
-                            )}
-                            <div
-                              className={`font-semibold flex items-center gap-1 ${log.status === "success" || log.success ? "text-green-600" : "text-red-600"}`}
-                            >
-                              {log.status === "success" || log.success ? (
-                                <>
-                                  <Activity className="w-3 h-3" />
-                                  <span>{log.latency_ms}ms</span>
-                                </>
-                              ) : (
-                                <>
-                                  <AlertCircle className="w-3 h-3" />
-                                  <span>Failed</span>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <ErrorBoundary>
+            <LiveLogsTab user={user} liveLogs={liveLogs} />
+            </ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="history">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle>Recent Benchmarks</CardTitle>
-                  <CardDescription>Last 100 benchmark runs</CardDescription>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      if (history.length === 0) return;
-                      const csv = Papa.unparse(history);
-                      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-                      const url = URL.createObjectURL(blob);
-                      const link = document.createElement("a");
-                      link.href = url;
-                      link.setAttribute("download", "dns_benchmark_history.csv");
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                      URL.revokeObjectURL(url);
-                    }}
-                  >
-                    <Download className="w-4 h-4 mr-2" />
-                    Export CSV
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      if (history.length === 0) return;
-                      const json = JSON.stringify(history, null, 2);
-                      const blob = new Blob([json], { type: "application/json;charset=utf-8;" });
-                      const url = URL.createObjectURL(blob);
-                      const link = document.createElement("a");
-                      link.href = url;
-                      link.setAttribute("download", "dns_benchmark_history.json");
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                      URL.revokeObjectURL(url);
-                    }}
-                  >
-                    <Download className="w-4 h-4 mr-2" />
-                    Export JSON
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {!isSupabaseConfigured ? (
-                  <div className="text-center py-8 text-slate-500 flex flex-col items-center gap-2">
-                    <AlertCircle className="w-6 h-6 text-yellow-500" />
-                    <p>
-                      History requires Supabase. Configure{" "}
-                      <code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 rounded">
-                        VITE_SUPABASE_URL
-                      </code>{" "}
-                      and{" "}
-                      <code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 rounded">
-                        VITE_SUPABASE_ANON_KEY
-                      </code>{" "}
-                      to enable this feature.
-                    </p>
-                  </div>
-                ) : !user ? (
-                  <div className="text-center py-8 text-slate-500 flex flex-col items-center gap-2">
-                    <AlertCircle className="w-6 h-6 text-blue-500" />
-                    <p>Please log in to view your benchmark history.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-8">
-                    <div className="h-[400px] w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart
-                          data={Object.values(
-                            history.reduce(
-                              (acc, curr) => {
-                                const time = curr.tested_at || curr.timestamp;
-                                if (!acc[time]) acc[time] = { tested_at: time };
-                                acc[time][curr.provider] = curr.latency_ms;
-                                return acc;
-                              },
-                              {} as Record<string, any>
-                            )
-                          ).sort(
-                            (a: any, b: any) =>
-                              new Date(a.tested_at).getTime() -
-                              new Date(b.tested_at).getTime()
-                          )}
-                        >
-                          <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                          <XAxis
-                            dataKey="tested_at"
-                            tickFormatter={val =>
-                              new Date(val).toLocaleTimeString()
-                            }
-                            tick={{ fontSize: 12 }}
-                          />
-                          <YAxis tick={{ fontSize: 12 }} />
-                          <Tooltip
-                            labelFormatter={val =>
-                              new Date(val).toLocaleString()
-                            }
-                            contentStyle={{
-                              backgroundColor:
-                                theme === "dark" ? "#1e293b" : "#fff",
-                              borderColor:
-                                theme === "dark" ? "#334155" : "#e2e8f0",
-                            }}
-                          />
-                          <Legend />
-                          {userProviders.map(provider => (
-                            <Line
-                              key={provider.name}
-                              type="monotone"
-                              dataKey={provider.name}
-                              stroke={provider.color}
-                              name={provider.name}
-                              connectNulls
-                            />
-                          ))}
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-
-                    <div>
-                      <h3 className="text-lg font-semibold mb-4">
-                        Raw Records
-                      </h3>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-left">
-                          <thead>
-                            <tr className="border-b dark:border-slate-800">
-                              <th className="py-3 px-4 font-semibold">Time</th>
-                              <th className="py-3 px-4 font-semibold">
-                                Domain
-                              </th>
-                              <th className="py-3 px-4 font-semibold">
-                                Provider
-                              </th>
-                              <th className="py-3 px-4 font-semibold">
-                                Latency
-                              </th>
-                              <th className="py-3 px-4 font-semibold">
-                                Method
-                              </th>
-                              <th className="py-3 px-4 font-semibold">
-                                Action
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {history.map(record => (
-                              <tr
-                                key={record.id}
-                                className="border-b dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                              >
-                                <td className="py-3 px-4">
-                                  {new Date(
-                                    record.tested_at || record.timestamp
-                                  ).toLocaleString()}
-                                </td>
-                                <td className="py-3 px-4 font-mono">
-                                  {record.domain}
-                                </td>
-                                <td className="py-3 px-4">{record.provider}</td>
-                                <td className="py-3 px-4">
-                                  {record.latency_ms}ms
-                                </td>
-                                <td className="py-3 px-4">
-                                  {record.method || record.method_used ? (
-                                    <span
-                                      className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-medium ${(record.method || record.method_used) === "server" || (record.method || record.method_used) === "server-udp" || (record.method || record.method_used) === "server-doh" ? "bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-400" : (record.method || record.method_used) === "client" || (record.method || record.method_used) === "client-fallback" || (record.method || record.method_used) === "fallback" ? "bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-400" : "bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-400"}`}
-                                    >
-                                      {record.method || record.method_used}
-                                      {}
-                                    </span>
-                                  ) : (
-                                    <span className="text-slate-400">-</span>
-                                  )}
-                                </td>
-                                <td className="py-3 px-4">
-                                  {record.keep ? (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() =>
-                                        handleKeepRecord(record.id, false)
-                                      }
-                                    >
-                                      Discard
-                                    </Button>
-                                  ) : (
-                                    <Button
-                                      size="sm"
-                                      onClick={() =>
-                                        handleKeepRecord(record.id, true)
-                                      }
-                                    >
-                                      Keep
-                                    </Button>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <ErrorBoundary>
+            <HistoryTab
+              user={user}
+              history={history}
+              handleKeepRecord={handleKeepRecord}
+              userProviders={userProviders}
+            />
+            </ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="leaderboard">
-            <Card>
-              <CardHeader>
-                <CardTitle>
-                  {user ? "Your DNS Performance" : "Global DNS Performance"}
-                </CardTitle>
-                <CardDescription>
-                  Ranked by speed, reliability, and stability
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {!isSupabaseConfigured ? (
-                  <div className="text-center py-8 text-slate-500 flex flex-col items-center gap-2">
-                    <AlertCircle className="w-6 h-6 text-yellow-500" />
-                    <p>
-                      Leaderboard requires Supabase. Configure{" "}
-                      <code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 rounded">
-                        VITE_SUPABASE_URL
-                      </code>{" "}
-                      and{" "}
-                      <code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 rounded">
-                        VITE_SUPABASE_ANON_KEY
-                      </code>{" "}
-                      to enable this feature.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    {leaderboard.length > 0 && (
-                      <div className="bg-slate-100 dark:bg-slate-800 p-4 rounded-lg flex items-center gap-2">
-                        <Trophy className="w-5 h-5 text-yellow-500" />
-                        <p className="font-semibold">
-                          Recommended DNS:{" "}
-                          <span className="text-primary">
-                            {
-                              leaderboard.sort(
-                                (a, b) =>
-                                  (b.reliability_score || b.score) -
-                                  (a.reliability_score || a.score)
-                              )[0]?.provider
-                            }
-                          </span>{" "}
-                          (Score:{" "}
-                          {leaderboard
-                            .sort(
-                              (a, b) =>
-                                (b.reliability_score || b.score) -
-                                (a.reliability_score || a.score)
-                            )[0]
-                            ?.reliability_score?.toFixed(1) ||
-                            leaderboard
-                              .sort(
-                                (a, b) =>
-                                  (b.reliability_score || b.score) -
-                                  (a.reliability_score || a.score)
-                              )[0]
-                              ?.score?.toFixed(1)}
-                          )
-                        </p>
-                      </div>
-                    )}
-                    <div className="rounded-md border">
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-left">
-                          <thead className="text-xs text-slate-500 bg-slate-50 dark:bg-slate-800 uppercase">
-                            <tr>
-                              <th className="px-4 py-3 font-medium">Rank</th>
-                              <th className="px-4 py-3 font-medium">
-                                Provider
-                              </th>
-                              <th className="px-4 py-3 font-medium">Latency</th>
-                              <th className="px-4 py-3 font-medium">
-                                Success %
-                              </th>
-                              <th className="px-4 py-3 font-medium">
-                                Reliability Score
-                              </th>
-                              <th className="px-4 py-3 font-medium">Tests</th>
-                              <th className="px-4 py-3 font-medium text-center">Stability</th>
-                              <th className="px-4 py-3 font-medium">Method Stats</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {leaderboard
-                              .sort(
-                                (a, b) =>
-                                  (b.reliability_score || b.score) -
-                                  (a.reliability_score || a.score)
-                              )
-                              .map((item, index) => {
-                                const provider = userProviders.find(
-                                  p => p.name === item.provider
-                                );
-
-                                // Color logic
-                                let successColor = "text-red-500";
-                                const rate =
-                                  item.success_rate <= 1
-                                    ? item.success_rate * 100
-                                    : item.success_rate;
-                                if (rate >= 95) successColor = "text-green-500";
-                                else if (rate >= 80)
-                                  successColor = "text-yellow-500";
-
-                                let latencyColor = "text-red-500";
-                                if (item.avg_latency < 100)
-                                  latencyColor = "text-green-500";
-                                else if (item.avg_latency <= 250)
-                                  latencyColor = "text-yellow-500";
-
-                                return (
-                                  <tr
-                                    key={item.provider}
-                                    className="border-b last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                                  >
-                                    <td className="px-4 py-3">
-                                      <div
-                                        className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white text-xs ${index === 0 ? "bg-yellow-500" : index === 1 ? "bg-slate-400" : index === 2 ? "bg-amber-700" : "bg-slate-800"}`}
-                                      >
-                                        #{index + 1}
-                                      </div>
-                                    </td>
-                                    <td
-                                      className="px-4 py-3 font-bold"
-                                      style={{ color: provider?.color }}
-                                    >
-                                      {item.provider}
-                                    </td>
-                                    <td
-                                      className={`px-4 py-3 font-medium ${latencyColor}`}
-                                    >
-                                      {item.avg_latency === null ||
-                                      isNaN(item.avg_latency)
-                                        ? "N/A"
-                                        : Math.round(item.avg_latency)}{" "}
-                                      ms
-                                    </td>
-                                    <td
-                                      className={`px-4 py-3 font-medium ${successColor}`}
-                                    >
-                                      {item.success_rate === null ||
-                                      isNaN(item.success_rate)
-                                        ? "N/A"
-                                        : item.success_rate <= 1
-                                          ? (item.success_rate * 100).toFixed(1)
-                                          : item.success_rate.toFixed(1)}
-                                      %
-                                    </td>
-                                    <td className="px-4 py-3 font-black text-primary">
-                                      {item.reliability_score === null ||
-                                      item.reliability_score === undefined ||
-                                      isNaN(item.reliability_score)
-                                        ? item.score === null ||
-                                          isNaN(item.score)
-                                          ? "0.0"
-                                          : item.score.toFixed(1)
-                                        : item.reliability_score.toFixed(1)}
-                                    </td>
-                                    <td className="px-4 py-3 text-slate-500">
-                                      {item.sample_count ||
-                                        item.total_tests ||
-                                        0}
-                                    </td>
-                                    <td className="px-4 py-3 text-center">
-                                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                                        item.stability_status === 'Stable' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' :
-                                        item.stability_status === 'Unstable' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' :
-                                        item.stability_status === 'Unreliable' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' :
-                                        'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-400'
-                                      }`}>
-                                        <span className={`mr-1.5 h-2 w-2 rounded-full ${
-                                          item.stability_status === 'Stable' ? 'bg-green-500' :
-                                          item.stability_status === 'Unstable' ? 'bg-yellow-500' :
-                                          item.stability_status === 'Unreliable' ? 'bg-red-500' :
-                                          'bg-slate-500'
-                                        }`}></span>
-                                        {item.stability_status || 'Unknown'}
-                                      </span>
-                                    </td>
-                                    <td className="px-4 py-3 text-xs space-y-1">
-                                      {item.udp_percentage !== undefined && (
-                                        <>
-                                          <div className="flex justify-between w-32"><span className="text-slate-500">UDP:</span><span className="font-medium text-blue-500">{item.udp_percentage.toFixed(1)}%</span></div>
-                                          <div className="flex justify-between w-32"><span className="text-slate-500">DoH:</span><span className="font-medium text-indigo-500">{item.doh_percentage.toFixed(1)}%</span></div>
-                                          <div className="flex justify-between w-32"><span className="text-slate-500">Fallback:</span><span className="font-medium text-orange-500">{item.fallback_percentage.toFixed(1)}%</span></div>
-                                          <div className="flex justify-between w-32"><span className="text-slate-500">Failed:</span><span className="font-medium text-red-500">{item.failure_percentage.toFixed(1)}%</span></div>
-                                        </>
-                                      )}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <ErrorBoundary>
+            <LeaderboardTab
+              user={user}
+              leaderboard={leaderboard}
+              userProviders={userProviders}
+              isFetchingData={isFetchingData}
+            />
+            </ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="settings">
-            <Card>
-              <CardHeader>
-                <CardTitle>Settings & Preferences</CardTitle>
-                <CardDescription>
-                  Configure custom DNS providers and behavior
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {!user ? (
-                  <div className="text-center py-8 text-slate-500 flex flex-col items-center gap-2">
-                    <AlertCircle className="w-6 h-6 text-blue-500" />
-                    <p>Please log in to manage settings.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-6 max-w-md">
-                    <div className="space-y-4">
-                      <h3 className="text-sm font-medium mb-2">
-                        Custom DNS Provider
-                      </h3>
-                      <div className="grid gap-2">
-                        <Input
-                          placeholder="Provider Name (e.g. My Custom DNS)"
-                          value={customName}
-                          onChange={e => setCustomName(e.target.value)}
-                        />
-                        <Input
-                          placeholder="DoH URL (e.g. https://dns.quad9.net/dns-query)"
-                          value={customUrl}
-                          onChange={e => setCustomUrl(e.target.value)}
-                        />
-                      </div>
-                      <div className="flex justify-end mt-2">
-                        <Button
-                          onClick={async () => {
-                            if (!user) {
-                              toast.error("Login required", {
-                                description:
-                                  "You must be logged in to save settings.",
-                              });
-                              return;
-                            }
-                            const { error } = await supabase
-                              .from("user_preferences")
-                              .upsert(
-                                {
-                                  user_id: user.id,
-                                  custom_dns_name: customName || null,
-                                  custom_dns_url: customUrl || null,
-                                },
-                                { onConflict: "user_id" }
-                              );
-                            if (error) {
-                              toast.error("Failed to save settings");
-                            } else {
-                              toast.success("Settings saved!");
-                              if (customName && customUrl) {
-                                setUserProviders([
-                                  ...DOH_PROVIDERS,
-                                  {
-                                    key: "custom",
-                                    name: customName,
-                                    url: customUrl,
-                                    color: "#8b5cf6",
-                                    format: "json",
-                                  },
-                                ]);
-                              } else {
-                                setUserProviders([...DOH_PROVIDERS]);
-                              }
-                            }
-                          }}
-                        >
-                          <Save className="w-4 h-4 mr-2" />
-                          Save
-                        </Button>
-                      </div>
-                      <p className="text-xs text-slate-500">
-                        Provide a valid DoH endpoint URL for a custom DNS
-                        resolver. This will add your provider to the benchmark
-                        list.
-                      </p>
-                    </div>
-                    <div className="pt-6 border-t dark:border-slate-800"></div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            <ErrorBoundary>
+            <SettingsTab
+              user={user}
+              customName={customName}
+              setCustomName={setCustomName}
+              customUrl={customUrl}
+              setCustomUrl={setCustomUrl}
+              setUserProviders={setUserProviders}
+            />
+            </ErrorBoundary>
           </TabsContent>
         </Tabs>
       </div>
