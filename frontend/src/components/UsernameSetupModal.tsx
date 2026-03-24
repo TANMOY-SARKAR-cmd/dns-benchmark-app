@@ -12,6 +12,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { isDefaultUsername } from "@/lib/utils";
 
 export function UsernameSetupModal() {
   const { user, profile, refreshProfile } = useAuth();
@@ -22,10 +23,7 @@ export function UsernameSetupModal() {
 
   useEffect(() => {
     // Open modal if username is null or matches the default fallback "user_XXXXXX"
-    if (
-      profile &&
-      (!profile.username || profile.username.startsWith("user_"))
-    ) {
+    if (profile && isDefaultUsername(profile.username)) {
       setIsOpen(true);
       setUsername(profile.username || "");
       setFullName(profile.full_name || "");

@@ -6,6 +6,7 @@ import { isSupabaseConfigured } from "@/config/env";
 import { useAuth } from "@/contexts/AuthContext";
 import { UsernameSetupModal } from "./UsernameSetupModal";
 import { AccountPanel } from "./AccountPanel";
+import { isDefaultUsername } from "@/lib/utils";
 
 export function AuthButton() {
   const { user, profile, isLoading } = useAuth();
@@ -15,9 +16,7 @@ export function AuthButton() {
   if (user) {
     return (
       <div className="flex items-center gap-4">
-        {(!profile?.username || profile?.username?.startsWith("user_")) && (
-          <UsernameSetupModal />
-        )}
+        {isDefaultUsername(profile?.username) && <UsernameSetupModal />}
         <AccountPanel />
       </div>
     );
