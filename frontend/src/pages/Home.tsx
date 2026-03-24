@@ -481,16 +481,18 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
 
     const VALID_DOMAIN_PATTERN =
       /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
-    const domains = monitorDomains
-      .split(/[\n,]+/)
-      .map(
-        d =>
-          d
-            .trim()
-            .replace(/^https?:\/\//i, "")
-            .split("/")[0]
-      )
-      .filter(d => d.length > 0 && VALID_DOMAIN_PATTERN.test(d));
+    const domains: string[] = [];
+    const rawParts = monitorDomains.split(/[\n,]+/);
+    for (const part of rawParts) {
+      const d = part
+        .trim()
+        .replace(/^https?:\/\//i, "")
+        .split("/")[0];
+
+      if (d.length > 0 && VALID_DOMAIN_PATTERN.test(d)) {
+        domains.push(d);
+      }
+    }
 
     if (domains.length === 0) {
       toast.error("Please enter at least one valid domain");
@@ -861,22 +863,31 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
     // Basic domain validation: strip protocols/paths and reject obviously invalid entries
     const VALID_DOMAIN_PATTERN =
       /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
-    const rawDomains = domainsInput
-      .split(/[\n,]+/)
-      .map(
-        d =>
-          d
-            .trim()
-            .replace(/^https?:\/\//i, "")
-            .split("/")[0]
-      )
-      .filter(d => d.length > 0);
+    const validDomains: string[] = [];
+    const invalid: string[] = [];
+    const tooLong: string[] = [];
 
-    const domains = rawDomains.filter(d => VALID_DOMAIN_PATTERN.test(d));
-    const invalid = rawDomains.filter(d => !VALID_DOMAIN_PATTERN.test(d));
+    const rawParts = domainsInput.split(/[\n,]+/);
+    for (const part of rawParts) {
+      const d = part
+        .trim()
+        .replace(/^https?:\/\//i, "")
+        .split("/")[0];
 
-    const validDomains = domains.filter(d => d.length <= 253);
-    const tooLong = domains.filter(d => d.length > 253);
+      if (d.length === 0) continue;
+
+      if (VALID_DOMAIN_PATTERN.test(d)) {
+        if (d.length <= 253) {
+          validDomains.push(d);
+        } else {
+          tooLong.push(d);
+        }
+      } else {
+        invalid.push(d);
+      }
+    }
+
+    const domains = validDomains;
 
     if (tooLong.length > 0) {
       toast.warning(
@@ -889,10 +900,6 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
         `Skipped ${invalid.length} invalid entr${invalid.length === 1 ? "y" : "ies"}: ${invalid.slice(0, 3).join(", ")}${invalid.length > 3 ? "…" : ""}`
       );
     }
-
-    // Update domains to only use valid ones
-    domains.length = 0;
-    domains.push(...validDomains);
 
 
     if (domains.length === 0) {
