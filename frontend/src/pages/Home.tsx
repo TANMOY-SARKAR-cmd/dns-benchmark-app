@@ -184,7 +184,6 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
           table: "dns_queries",
         },
         payload => {
-          console.log("Realtime insert:", payload);
           setLiveLogs(prev => [payload.new, ...prev].slice(0, 50));
         }
       )
@@ -1090,7 +1089,6 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
         // Insert queries in batches of 50
         for (let i = 0; i < allQueries.length; i += 50) {
           const batch = allQueries.slice(i, i + 50);
-          console.log("Inserting DNS queries:", batch);
           const { error } = await supabase.from("dns_queries").insert(batch);
           if (error) {
             console.error("Supabase error:", error);
@@ -1109,7 +1107,6 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
         }));
 
         if (benchmarkResults.length > 0) {
-          console.log("Inserting benchmark results:", benchmarkResults);
           const { error } = await supabase
             .from("benchmark_results")
             .insert(benchmarkResults);
