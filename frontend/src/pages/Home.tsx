@@ -40,7 +40,6 @@ import {
   LineChart,
   Line,
 } from "recharts";
-import Papa from "papaparse";
 import {
   Globe,
   AlertCircle,
@@ -1130,40 +1129,6 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
     }
   };
 
-  const handleExportCSV = () => {
-    if (!testResults) return;
-
-    const data = [];
-    for (const [domain, providers] of Object.entries(testResults)) {
-      const row: any = { Domain: domain };
-      for (const provider of userProviders) {
-        const result = providers[provider.name];
-        if (result === "Error" || !result) {
-          row[`${provider.name} (ms)`] = "Error";
-          row[`${provider.name} Success %`] = "Error";
-        } else {
-          row[`${provider.name} (ms)`] = result.avgLatency;
-          row[`${provider.name} Success %`] = result.successRate;
-        }
-      }
-      data.push(row);
-    }
-
-    const csv = Papa.unparse(data);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute(
-      "download",
-      `dns_benchmark_${new Date().toISOString()}.csv`
-    );
-    link.style.visibility = "hidden";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
 
   // Prepare chart data
   const chartData = testResults
