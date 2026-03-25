@@ -340,19 +340,19 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
 
               // Second pass: run client fallback concurrently only for failed providers
               if (failedProviders.length > 0) {
-                const fallbackResults = await Promise.all(
-                  failedProviders.map(async provider => {
-                    try {
-                      const fallbackResult = await measureClientDoH(
-                        provider,
-                        domain
-                      );
-                      return { provider, result: fallbackResult };
-                    } catch (error) {
-                      return { provider, result: "Error" as const };
-                    }
-                  })
-                );
+                // Optimized N+1 queries using Promise.all
+                const fallbackPromises = failedProviders.map(async provider => {
+                  try {
+                    const fallbackResult = await measureClientDoH(
+                      provider,
+                      domain
+                    );
+                    return { provider, result: fallbackResult };
+                  } catch (error) {
+                    return { provider, result: "Error" as const };
+                  }
+                });
+                const fallbackResults = await Promise.all(fallbackPromises);
 
                 for (const { provider, result } of fallbackResults) {
                   results[domain][provider.name] = result;
@@ -997,16 +997,16 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
           toast.warning(
             `Backend failed for ${failedProviders.length} provider(s), using client fallback`
           );
-          const fallbackResults = await Promise.all(
-            failedProviders.map(async provider => {
-              try {
-                const fallbackResult = await measureClientDoH(provider, domain);
-                return { provider, result: fallbackResult };
-              } catch (error) {
-                return { provider, result: "Error" as const };
-              }
-            })
-          );
+          // Optimized N+1 queries using Promise.all
+          const fallbackPromises = failedProviders.map(async provider => {
+            try {
+              const fallbackResult = await measureClientDoH(provider, domain);
+              return { provider, result: fallbackResult };
+            } catch (error) {
+              return { provider, result: "Error" as const };
+            }
+          });
+          const fallbackResults = await Promise.all(fallbackPromises);
 
           let totalFailed = 0;
           for (const { provider, result } of fallbackResults) {
