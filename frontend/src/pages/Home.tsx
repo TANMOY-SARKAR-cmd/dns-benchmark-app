@@ -648,29 +648,34 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
         }
       }
 
-      const stats = Object.entries(agg).map(([provider, stat]) => {
+      const stats = [];
+      for (const provider in agg) {
+        const stat = agg[provider];
+        if (stat.latencies.length === 0) continue;
+
         const success_rate = stat.successCount / stat.total;
-        const avg_latency =
-          stat.latencies.length > 0
-            ? stat.latencies.reduce((a, b) => a + b, 0) / stat.latencies.length
-            : null;
+        let sum = 0;
+        for (let i = 0; i < stat.latencies.length; i++) {
+          sum += stat.latencies[i];
+        }
+        const avg_latency = sum / stat.latencies.length;
 
         let reliability_score = 0;
-        if (success_rate !== 0 && avg_latency !== null) {
+        if (success_rate !== 0) {
           reliability_score =
             (success_rate * 0.6) +
             ((1.0 / Math.max(avg_latency, 1)) * 0.25) +
             (Math.log10(Math.max(stat.total || 1, 1)) * 0.15);
         }
 
-        return {
+        stats.push({
           provider,
           avg_latency,
           success_rate,
           reliability_score,
           total: stat.total,
-        };
-      }).filter(s => s.avg_latency !== null);
+        });
+      }
 
       if (stats.length === 0) {
         setPersonalBest(null);
@@ -736,31 +741,36 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
           }
         }
 
-        dataToProcess = Object.entries(agg).map(([provider, stats]) => {
-          const success_rate = (stats.successCount / stats.total) * 100;
-          const avg_latency =
-            stats.latencies.length > 0
-              ? stats.latencies.reduce((a, b) => a + b, 0) /
-                stats.latencies.length
-              : null;
+        for (const provider in agg) {
+          const stats = agg[provider];
 
+          const success_rate = (stats.successCount / stats.total) * 100;
+          let avg_latency = null;
           let jitter = null;
-          if (stats.latencies.length > 1 && avg_latency !== null) {
-            const variance =
-              stats.latencies.reduce(
-                (sum, lat) => sum + Math.pow(lat - avg_latency, 2),
-                0
-              ) /
-              (stats.latencies.length - 1);
-            jitter = Math.sqrt(variance);
-          } else if (stats.latencies.length === 1) {
-            jitter = avg_latency;
+
+          if (stats.latencies.length > 0) {
+            let sum = 0;
+            for (let i = 0; i < stats.latencies.length; i++) {
+              sum += stats.latencies[i];
+            }
+            avg_latency = sum / stats.latencies.length;
+
+            if (stats.latencies.length > 1) {
+              let varSum = 0;
+              for (let i = 0; i < stats.latencies.length; i++) {
+                varSum += Math.pow(stats.latencies[i] - avg_latency, 2);
+              }
+              jitter = Math.sqrt(varSum / (stats.latencies.length - 1));
+            } else {
+              jitter = avg_latency;
+            }
           }
 
-          const udp_percentage = (stats.udp / Math.max(stats.total, 1)) * 100;
-          const doh_percentage = (stats.doh / Math.max(stats.total, 1)) * 100;
-          const fallback_percentage = (stats.fallback / Math.max(stats.total, 1)) * 100;
-          const failure_percentage = (stats.failed / Math.max(stats.total, 1)) * 100;
+          const total = Math.max(stats.total, 1);
+          const udp_percentage = (stats.udp / total) * 100;
+          const doh_percentage = (stats.doh / total) * 100;
+          const fallback_percentage = (stats.fallback / total) * 100;
+          const failure_percentage = (stats.failed / total) * 100;
 
           let stability_status = "Stable";
           if (failure_percentage > 20 || fallback_percentage > 30 || (jitter !== null && jitter > 50)) {
@@ -769,7 +779,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
             stability_status = "Unstable";
           }
 
-          return {
+          dataToProcess.push({
             provider,
             avg_latency,
             success_rate,
@@ -780,8 +790,8 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
             fallback_percentage,
             failure_percentage,
             stability_status,
-          };
-        });
+          });
+        }
       } else {
         // Fetch global leaderboard from view
         const { data, error } = await supabase.from("leaderboard").select("*");
