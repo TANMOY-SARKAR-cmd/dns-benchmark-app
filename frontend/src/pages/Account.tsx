@@ -143,10 +143,16 @@ export default function Account() {
     try {
       toast.info("Preparing export...");
 
-      // Fetch data
-      const { data: queries } = await supabase.from("dns_queries").select("*").eq("user_id", user.id);
-      const { data: benchmarks } = await supabase.from("benchmark_results").select("*").eq("user_id", user.id);
-      const { data: monitors } = await supabase.from("monitor_results").select("*").eq("user_id", user.id);
+      // Fetch data concurrently
+      const [
+        { data: queries },
+        { data: benchmarks },
+        { data: monitors }
+      ] = await Promise.all([
+        supabase.from("dns_queries").select("*").eq("user_id", user.id),
+        supabase.from("benchmark_results").select("*").eq("user_id", user.id),
+        supabase.from("monitor_results").select("*").eq("user_id", user.id)
+      ]);
 
       const allData = {
         dns_queries: queries || [],
@@ -177,9 +183,11 @@ export default function Account() {
     try {
       toast.info("Deleting data...");
 
-      await supabase.from("dns_queries").delete().eq("user_id", user.id);
-      await supabase.from("benchmark_results").delete().eq("user_id", user.id);
-      await supabase.from("monitor_results").delete().eq("user_id", user.id);
+      await Promise.all([
+        supabase.from("dns_queries").delete().eq("user_id", user.id),
+        supabase.from("benchmark_results").delete().eq("user_id", user.id),
+        supabase.from("monitor_results").delete().eq("user_id", user.id),
+      ]);
 
       toast.success("All test data deleted");
     } catch (error: any) {
@@ -199,11 +207,13 @@ export default function Account() {
       if (error) {
          console.error("RPC delete_user failed:", error);
          // Fallback to manual cleanup if RPC fails/doesn't exist
-         await supabase.from("dns_queries").delete().eq("user_id", user.id);
-         await supabase.from("benchmark_results").delete().eq("user_id", user.id);
-         await supabase.from("monitor_results").delete().eq("user_id", user.id);
-         await supabase.from("monitors").delete().eq("user_id", user.id);
-         await supabase.from("user_preferences").delete().eq("user_id", user.id);
+         await Promise.all([
+           supabase.from("dns_queries").delete().eq("user_id", user.id),
+           supabase.from("benchmark_results").delete().eq("user_id", user.id),
+           supabase.from("monitor_results").delete().eq("user_id", user.id),
+           supabase.from("monitors").delete().eq("user_id", user.id),
+           supabase.from("user_preferences").delete().eq("user_id", user.id),
+         ]);
          // We can't delete auth user from client without RPC
          await supabase.auth.signOut();
       } else {
