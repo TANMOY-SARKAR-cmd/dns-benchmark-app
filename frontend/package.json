@@ -17,12 +17,12 @@
     "@types/react-dom": "^19.2.1",
     "add": "^2.0.6",
     "autoprefixer": "^10.4.20",
-    "esbuild": "^0.25.11",
+    "esbuild": "^0.26.0",
     "postcss": "^8.4.47",
     "tsx": "^4.19.1",
     "vite": "^8.0.0",
     "vite-plugin-manus-runtime": "^0.0.57",
-    "vitest": "2.1.4"
+    "vitest": "2.1.9"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.693.0",
