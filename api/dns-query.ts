@@ -65,7 +65,7 @@ const CHUNK_SIZE = 3;
 const GLOBAL_TIMEOUT = 4500; // ms — safe under Vercel Hobby 10 s limit
 const REQUEST_TIMEOUT = 2500; // ms — per individual DoH fetch
 
-function validateCustomUrl(url: string): boolean {
+export function validateCustomUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== "https:") return false;
