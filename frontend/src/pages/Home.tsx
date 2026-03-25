@@ -40,7 +40,6 @@ import {
   LineChart,
   Line,
 } from "recharts";
-import Papa from "papaparse";
 import {
   Globe,
   AlertCircle,
@@ -297,6 +296,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
               // Ignore, fallback to client DoH handled below
             }
 
+            const fallbackTasks: Promise<void>[] = [];
             // First pass: identify server successes and failed providers per domain
             for (const domain of monitor.domains) {
               const failedProviders: any[] = [];
@@ -338,10 +338,11 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
                 }
               }
 
-              // Second pass: run client fallback concurrently only for failed providers
+              // Second pass: queue client fallback concurrently for failed providers
               if (failedProviders.length > 0) {
                 // Optimized N+1 queries using Promise.all
                 const fallbackPromises = failedProviders.map(async provider => {
+                const tasks = failedProviders.map(async provider => {
                   try {
                     const fallbackResult = await measureClientDoH(
                       provider,
@@ -357,8 +358,21 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
                 for (const { provider, result } of fallbackResults) {
                   results[domain][provider.name] = result;
                 }
+                    results[domain][provider.name] = fallbackResult;
+                  } catch (error) {
+                    results[domain][provider.name] = "Error" as const;
+                  }
+                });
+                fallbackTasks.push(...tasks);
               }
+            }
 
+            // Wait for all queued fallback tasks to complete across all domains
+            if (fallbackTasks.length > 0) {
+              await Promise.all(fallbackTasks);
+            }
+
+            for (const domain of monitor.domains) {
               // Finalize results for all providers for this domain
               for (const providerName of monitor.providers) {
                 const provider =
@@ -598,18 +612,21 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
     }
 
     try {
-      const { data: monitorData, error: monitorError } = await supabase
-        .from("monitor_results")
-        .select("provider, latency_ms, success, method")
-        .eq("user_id", user.id);
+      const [
+        { data: monitorData, error: monitorError },
+        { data: benchmarkData, error: benchmarkError }
+      ] = await Promise.all([
+        supabase
+          .from("monitor_results")
+          .select("provider, latency_ms, success, method")
+          .eq("user_id", user.id),
+        supabase
+          .from("benchmark_results")
+          .select("provider, latency_ms, success, method")
+          .eq("user_id", user.id)
+      ]);
 
       if (monitorError) throw monitorError;
-
-      const { data: benchmarkData, error: benchmarkError } = await supabase
-        .from("benchmark_results")
-        .select("provider, latency_ms, success, method")
-        .eq("user_id", user.id);
-
       if (benchmarkError) throw benchmarkError;
 
       const allData = [...(monitorData || []), ...(benchmarkData || [])];
@@ -643,29 +660,34 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
         }
       }
 
-      const stats = Object.entries(agg).map(([provider, stat]) => {
+      const stats = [];
+      for (const provider in agg) {
+        const stat = agg[provider];
+        if (stat.latencies.length === 0) continue;
+
         const success_rate = stat.successCount / stat.total;
-        const avg_latency =
-          stat.latencies.length > 0
-            ? stat.latencies.reduce((a, b) => a + b, 0) / stat.latencies.length
-            : null;
+        let sum = 0;
+        for (let i = 0; i < stat.latencies.length; i++) {
+          sum += stat.latencies[i];
+        }
+        const avg_latency = sum / stat.latencies.length;
 
         let reliability_score = 0;
-        if (success_rate !== 0 && avg_latency !== null) {
+        if (success_rate !== 0) {
           reliability_score =
             (success_rate * 0.6) +
             ((1.0 / Math.max(avg_latency, 1)) * 0.25) +
             (Math.log10(Math.max(stat.total || 1, 1)) * 0.15);
         }
 
-        return {
+        stats.push({
           provider,
           avg_latency,
           success_rate,
           reliability_score,
           total: stat.total,
-        };
-      }).filter(s => s.avg_latency !== null);
+        });
+      }
 
       if (stats.length === 0) {
         setPersonalBest(null);
@@ -731,31 +753,36 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
           }
         }
 
-        dataToProcess = Object.entries(agg).map(([provider, stats]) => {
-          const success_rate = (stats.successCount / stats.total) * 100;
-          const avg_latency =
-            stats.latencies.length > 0
-              ? stats.latencies.reduce((a, b) => a + b, 0) /
-                stats.latencies.length
-              : null;
+        for (const provider in agg) {
+          const stats = agg[provider];
 
+          const success_rate = (stats.successCount / stats.total) * 100;
+          let avg_latency = null;
           let jitter = null;
-          if (stats.latencies.length > 1 && avg_latency !== null) {
-            const variance =
-              stats.latencies.reduce(
-                (sum, lat) => sum + Math.pow(lat - avg_latency, 2),
-                0
-              ) /
-              (stats.latencies.length - 1);
-            jitter = Math.sqrt(variance);
-          } else if (stats.latencies.length === 1) {
-            jitter = avg_latency;
+
+          if (stats.latencies.length > 0) {
+            let sum = 0;
+            for (let i = 0; i < stats.latencies.length; i++) {
+              sum += stats.latencies[i];
+            }
+            avg_latency = sum / stats.latencies.length;
+
+            if (stats.latencies.length > 1) {
+              let varSum = 0;
+              for (let i = 0; i < stats.latencies.length; i++) {
+                varSum += Math.pow(stats.latencies[i] - avg_latency, 2);
+              }
+              jitter = Math.sqrt(varSum / (stats.latencies.length - 1));
+            } else {
+              jitter = avg_latency;
+            }
           }
 
-          const udp_percentage = (stats.udp / Math.max(stats.total, 1)) * 100;
-          const doh_percentage = (stats.doh / Math.max(stats.total, 1)) * 100;
-          const fallback_percentage = (stats.fallback / Math.max(stats.total, 1)) * 100;
-          const failure_percentage = (stats.failed / Math.max(stats.total, 1)) * 100;
+          const total = Math.max(stats.total, 1);
+          const udp_percentage = (stats.udp / total) * 100;
+          const doh_percentage = (stats.doh / total) * 100;
+          const fallback_percentage = (stats.fallback / total) * 100;
+          const failure_percentage = (stats.failed / total) * 100;
 
           let stability_status = "Stable";
           if (failure_percentage > 20 || fallback_percentage > 30 || (jitter !== null && jitter > 50)) {
@@ -764,7 +791,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
             stability_status = "Unstable";
           }
 
-          return {
+          dataToProcess.push({
             provider,
             avg_latency,
             success_rate,
@@ -775,8 +802,8 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
             fallback_percentage,
             failure_percentage,
             stability_status,
-          };
-        });
+          });
+        }
       } else {
         // Fetch global leaderboard from view
         const { data, error } = await supabase.from("leaderboard").select("*");
@@ -1013,8 +1040,23 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
             results[domain][provider.name] = result;
             if (result === "Error" || result.successRate === 0) {
               totalFailed++;
+          const fallbackTasks = failedProviders.map(async provider => {
+            try {
+              const fallbackResult = await measureClientDoH(provider, domain);
+              results[domain][provider.name] = fallbackResult;
+              if (fallbackResult === "Error" || fallbackResult.successRate === 0) {
+                return 1; // Failed
+              }
+              return 0; // Success
+            } catch (error) {
+              results[domain][provider.name] = "Error" as const;
+              return 1; // Failed
             }
-          }
+          });
+
+          const fallbackFailures = await Promise.all(fallbackTasks);
+          const totalFailed = fallbackFailures.reduce((sum, current) => sum + current, 0);
+
           if (totalFailed > 0) {
             toast.error(
               `All methods failed for ${totalFailed} provider(s) on ${domain}`
@@ -1086,14 +1128,19 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
 
       // Save to Supabase (only when configured and user is logged in)
       if (isSupabaseConfigured && user && allQueries.length > 0) {
-        // Insert queries in batches of 50
+        // Insert queries in batches of 50 concurrently
+        const insertPromises = [];
         for (let i = 0; i < allQueries.length; i += 50) {
           const batch = allQueries.slice(i, i + 50);
-          const { error } = await supabase.from("dns_queries").insert(batch);
-          if (error) {
-            console.error("Supabase error:", error);
-          }
+          insertPromises.push(
+            supabase.from("dns_queries").insert(batch).then(({ error }) => {
+              if (error) {
+                console.error("Supabase error:", error);
+              }
+            })
+          );
         }
+        await Promise.all(insertPromises);
 
         const benchmarkResults = allQueries.map(q => ({
           user_id: q.user_id,
@@ -1127,40 +1174,6 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
     }
   };
 
-  const handleExportCSV = () => {
-    if (!testResults) return;
-
-    const data = [];
-    for (const [domain, providers] of Object.entries(testResults)) {
-      const row: any = { Domain: domain };
-      for (const provider of userProviders) {
-        const result = providers[provider.name];
-        if (result === "Error" || !result) {
-          row[`${provider.name} (ms)`] = "Error";
-          row[`${provider.name} Success %`] = "Error";
-        } else {
-          row[`${provider.name} (ms)`] = result.avgLatency;
-          row[`${provider.name} Success %`] = result.successRate;
-        }
-      }
-      data.push(row);
-    }
-
-    const csv = Papa.unparse(data);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute(
-      "download",
-      `dns_benchmark_${new Date().toISOString()}.csv`
-    );
-    link.style.visibility = "hidden";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
 
   // Prepare chart data
   const chartData = testResults

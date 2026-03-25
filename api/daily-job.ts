@@ -15,11 +15,27 @@ export default async function handler(request: Request) {
   }
 
   const authHeader = request.headers.get("authorization");
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}` && !process.env.IS_DEV) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: CORS_HEADERS });
+  const cronSecret = process.env.CRON_SECRET;
+  const isDev = process.env.IS_DEV === "true";
+
+  // Secure authorization check:
+  // 1. Allow bypass only in development mode.
+  // 2. Otherwise, require CRON_SECRET to be defined, non-empty, and NOT the string "undefined".
+  // 3. Compare the Authorization header exactly against `Bearer ${cronSecret}`.
+  const isAuthorized = isDev || (
+    !!cronSecret &&
+    cronSecret !== "undefined" &&
+    authHeader === `Bearer ${cronSecret}`
+  );
+
+  if (!isAuthorized) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: CORS_HEADERS
+    });
   }
 
-  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "https://iayeyzsrhnqcesazsbrg.supabase.co";
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!supabaseUrl || !supabaseServiceKey) {
