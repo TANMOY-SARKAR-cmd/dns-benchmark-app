@@ -143,10 +143,16 @@ export default function Account() {
     try {
       toast.info("Preparing export...");
 
-      // Fetch data
-      const { data: queries } = await supabase.from("dns_queries").select("*").eq("user_id", user.id);
-      const { data: benchmarks } = await supabase.from("benchmark_results").select("*").eq("user_id", user.id);
-      const { data: monitors } = await supabase.from("monitor_results").select("*").eq("user_id", user.id);
+      // Fetch data concurrently
+      const [
+        { data: queries },
+        { data: benchmarks },
+        { data: monitors }
+      ] = await Promise.all([
+        supabase.from("dns_queries").select("*").eq("user_id", user.id),
+        supabase.from("benchmark_results").select("*").eq("user_id", user.id),
+        supabase.from("monitor_results").select("*").eq("user_id", user.id)
+      ]);
 
       const allData = {
         dns_queries: queries || [],
