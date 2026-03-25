@@ -598,18 +598,21 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
     }
 
     try {
-      const { data: monitorData, error: monitorError } = await supabase
-        .from("monitor_results")
-        .select("provider, latency_ms, success, method")
-        .eq("user_id", user.id);
+      const [
+        { data: monitorData, error: monitorError },
+        { data: benchmarkData, error: benchmarkError }
+      ] = await Promise.all([
+        supabase
+          .from("monitor_results")
+          .select("provider, latency_ms, success, method")
+          .eq("user_id", user.id),
+        supabase
+          .from("benchmark_results")
+          .select("provider, latency_ms, success, method")
+          .eq("user_id", user.id)
+      ]);
 
       if (monitorError) throw monitorError;
-
-      const { data: benchmarkData, error: benchmarkError } = await supabase
-        .from("benchmark_results")
-        .select("provider, latency_ms, success, method")
-        .eq("user_id", user.id);
-
       if (benchmarkError) throw benchmarkError;
 
       const allData = [...(monitorData || []), ...(benchmarkData || [])];
