@@ -297,6 +297,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
               // Ignore, fallback to client DoH handled below
             }
 
+            const fallbackTasks: Promise<void>[] = [];
             // First pass: identify server successes and failed providers per domain
             for (const domain of monitor.domains) {
               const failedProviders: any[] = [];
@@ -338,27 +339,29 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
                 }
               }
 
-              // Second pass: run client fallback concurrently only for failed providers
+              // Second pass: queue client fallback concurrently for failed providers
               if (failedProviders.length > 0) {
-                const fallbackResults = await Promise.all(
-                  failedProviders.map(async provider => {
-                    try {
-                      const fallbackResult = await measureClientDoH(
-                        provider,
-                        domain
-                      );
-                      return { provider, result: fallbackResult };
-                    } catch (error) {
-                      return { provider, result: "Error" as const };
-                    }
-                  })
-                );
-
-                for (const { provider, result } of fallbackResults) {
-                  results[domain][provider.name] = result;
-                }
+                const tasks = failedProviders.map(async provider => {
+                  try {
+                    const fallbackResult = await measureClientDoH(
+                      provider,
+                      domain
+                    );
+                    results[domain][provider.name] = fallbackResult;
+                  } catch (error) {
+                    results[domain][provider.name] = "Error" as const;
+                  }
+                });
+                fallbackTasks.push(...tasks);
               }
+            }
 
+            // Wait for all queued fallback tasks to complete across all domains
+            if (fallbackTasks.length > 0) {
+              await Promise.all(fallbackTasks);
+            }
+
+            for (const domain of monitor.domains) {
               // Finalize results for all providers for this domain
               for (const providerName of monitor.providers) {
                 const provider =
@@ -997,24 +1000,23 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
           toast.warning(
             `Backend failed for ${failedProviders.length} provider(s), using client fallback`
           );
-          const fallbackResults = await Promise.all(
-            failedProviders.map(async provider => {
-              try {
-                const fallbackResult = await measureClientDoH(provider, domain);
-                return { provider, result: fallbackResult };
-              } catch (error) {
-                return { provider, result: "Error" as const };
+          const fallbackTasks = failedProviders.map(async provider => {
+            try {
+              const fallbackResult = await measureClientDoH(provider, domain);
+              results[domain][provider.name] = fallbackResult;
+              if (fallbackResult === "Error" || fallbackResult.successRate === 0) {
+                return 1; // Failed
               }
-            })
-          );
-
-          let totalFailed = 0;
-          for (const { provider, result } of fallbackResults) {
-            results[domain][provider.name] = result;
-            if (result === "Error" || result.successRate === 0) {
-              totalFailed++;
+              return 0; // Success
+            } catch (error) {
+              results[domain][provider.name] = "Error" as const;
+              return 1; // Failed
             }
-          }
+          });
+
+          const fallbackFailures = await Promise.all(fallbackTasks);
+          const totalFailed = fallbackFailures.reduce((sum, current) => sum + current, 0);
+
           if (totalFailed > 0) {
             toast.error(
               `All methods failed for ${totalFailed} provider(s) on ${domain}`
