@@ -9,7 +9,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/utils/supabaseClient";
 import { toast } from "sonner";
 import { LogIn, Github, Mail } from "lucide-react";
 import { DiscordLogoIcon } from "@radix-ui/react-icons";
@@ -77,8 +77,16 @@ export function AuthDialog() {
   const handleWeb3Login = async () => {
     setIsLoading("web3");
     try {
+      if (typeof window.ethereum === 'undefined') {
+        toast.error("MetaMask or Web3 wallet not found!");
+        console.error("Auth error: No Web3 wallet found");
+        setIsLoading(null);
+        return;
+      }
+
+      console.log("Wallet connected, requesting SIWE message...");
       // @ts-ignore - Supabase types might not include signInWithWeb3 yet
-      const { error } = await supabase.auth.signInWithWeb3({
+      const { data, error } = await supabase.auth.signInWithWeb3({
         chain: "ethereum",
         statement: 'Sign in to the app'
       });
@@ -86,10 +94,14 @@ export function AuthDialog() {
       if (error) {
         toast.error(error.message);
         console.error("Auth error:", error);
+      } else {
+        console.log("Message signed, Auth success:", data);
+        toast.success("Successfully logged in with Web3!");
+        setIsOpen(false);
       }
     } catch (error) {
       toast.error("An unexpected error occurred");
-      console.error(error);
+      console.error("Auth error:", error);
     } finally {
       setIsLoading(null);
     }
