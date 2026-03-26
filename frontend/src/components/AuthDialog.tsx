@@ -1,3 +1,9 @@
+declare global {
+  interface Window {
+    ethereum?: any;
+  }
+}
+
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,38 +80,7 @@ export function AuthDialog() {
     }
   };
 
-  const handleWeb3Login = async () => {
-    setIsLoading("web3");
-    try {
-      if (typeof window.ethereum === 'undefined') {
-        toast.error("MetaMask or Web3 wallet not found!");
-        console.error("Auth error: No Web3 wallet found");
-        setIsLoading(null);
-        return;
-      }
 
-      console.log("Wallet connected, requesting SIWE message...");
-      // @ts-ignore - Supabase types might not include signInWithWeb3 yet
-      const { data, error } = await supabase.auth.signInWithWeb3({
-        chain: "ethereum",
-        statement: 'Sign in to the app'
-      });
-
-      if (error) {
-        toast.error(error.message);
-        console.error("Auth error:", error);
-      } else {
-        console.log("Message signed, Auth success:", data);
-        toast.success("Successfully logged in with Web3!");
-        setIsOpen(false);
-      }
-    } catch (error) {
-      toast.error("An unexpected error occurred");
-      console.error("Auth error:", error);
-    } finally {
-      setIsLoading(null);
-    }
-  };
 
   return (
     <Dialog
@@ -188,32 +163,7 @@ export function AuthDialog() {
             )}
           </Button>
 
-          <Button
-            variant="outline"
-            type="button"
-            size="lg"
-            disabled={!!isLoading}
-            onClick={handleWeb3Login}
-            className="w-full justify-start gap-3 px-4"
-          >
-            <div className="w-5 h-5 flex items-center justify-center bg-slate-100 dark:bg-slate-800 rounded-full text-slate-700 dark:text-slate-300">
-              <svg
-                viewBox="0 0 24 24"
-                className="w-3 h-3"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M11.944 17.97L4.58 13.62 11.943 24l7.37-10.38-7.372 4.35h.003zM12.056 0L4.69 12.22l7.365 4.354 7.365-4.35L12.056 0z"
-                  fill="currentColor"
-                />
-              </svg>
-            </div>
-            <span className="flex-1 text-left">Continue with Web3 Wallet</span>
-            {isLoading === "web3" && (
-              <span className="text-xs">Loading...</span>
-            )}
-          </Button>
-        </div>
+              </div>
       </DialogContent>
     </Dialog>
   );

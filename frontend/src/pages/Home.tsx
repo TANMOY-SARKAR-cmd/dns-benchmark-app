@@ -71,6 +71,10 @@ import { LiveLogsTab } from "./tabs/LiveLogsTab";
 import { SettingsTab } from "./tabs/SettingsTab";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
+function isBenchmarkResult(result: BenchmarkResult | "Error" | any): result is BenchmarkResult {
+  return typeof result === "object" && result !== null && "successRate" in result;
+}
+
 
 export default function Home({ tab = "benchmark" }: { tab?: string }) {
   const navigate = useNavigate();
@@ -873,7 +877,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
     );
   };
 
-  const handleTest = async () => {
+  const handleTest = async (providersOverride?: typeof userProviders | React.MouseEvent | any) => {
     // Basic domain validation: strip protocols/paths and reject obviously invalid entries
     const VALID_DOMAIN_PATTERN =
       /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
@@ -926,6 +930,8 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
       return;
     }
 
+    const targetProviders = Array.isArray(providersOverride) ? providersOverride : userProviders;
+
     setIsLoading(true);
     setProgress(0);
     setTestResults(null);
@@ -935,7 +941,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
       Record<string, BenchmarkResult | "Error">
     > = {};
     let completed = 0;
-    const total = domains.length * userProviders.length;
+    const total = domains.length * targetProviders.length;
 
     try {
       const allQueries: any[] = [];
@@ -945,7 +951,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
         results[domain] = {};
 
         // Prepare queries for all providers for this domain
-        const queries = userProviders.map(p => {
+        const queries = targetProviders.map(p => {
           const isCustom = !DOH_PROVIDERS.some(dp => dp.name === p.name);
           return {
             domain,
@@ -976,7 +982,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
         const failedProviders = [];
 
         // First pass: identify server successes and failed providers
-        for (const provider of userProviders) {
+        for (const provider of targetProviders) {
           const isCustom = !DOH_PROVIDERS.some(dp => dp.name === provider.name);
           let serverResult = null;
           if (
@@ -1016,7 +1022,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
             try {
               const fallbackResult = await measureClientDoH(provider, domain);
               results[domain][provider.name] = fallbackResult;
-              if (fallbackResult === "Error" || fallbackResult.successRate === 0) {
+              if ((fallbackResult as BenchmarkResult | "Error") === "Error" || (isBenchmarkResult(fallbackResult) && fallbackResult.successRate === 0)) {
                 return 1; // Failed
               }
               return 0; // Success
@@ -1027,7 +1033,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
           });
 
           const fallbackFailures = await Promise.all(fallbackTasks);
-          const totalFailed = fallbackFailures.reduce((sum, current) => sum + current, 0);
+          const totalFailed = fallbackFailures.reduce((sum: number, current: number) => sum + current, 0);
 
           if (totalFailed > 0) {
             toast.error(
@@ -1037,7 +1043,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
         }
 
         // Finalize results for all providers for this domain
-        for (const provider of userProviders) {
+        for (const provider of targetProviders) {
           const isCustom = !DOH_PROVIDERS.some(dp => dp.name === provider.name);
           let serverResult = null;
           if (
