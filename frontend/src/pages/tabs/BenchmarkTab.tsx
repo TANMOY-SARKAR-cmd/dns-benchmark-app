@@ -47,8 +47,8 @@ export function BenchmarkTab({
 
   const filteredChartData = chartData.map((item: any) => {
     const filtered: any = { domain: item.domain };
-    activeProviders.forEach((p: string) => {
-      if (p in item) filtered[p] = item[p];
+    Object.keys(item).forEach(key => {
+      if (key === 'domain' || activeProviders.includes(key)) filtered[key] = item[key];
     });
     return filtered;
   });

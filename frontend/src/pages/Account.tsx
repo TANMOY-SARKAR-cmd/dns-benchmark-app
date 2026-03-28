@@ -208,6 +208,7 @@ export default function Account() {
          console.error("RPC delete_user failed:", error);
          // Fallback to manual cleanup if RPC fails/doesn't exist
          await Promise.all([
+           supabase.from("profiles").delete().eq("id", user.id),
            supabase.from("dns_queries").delete().eq("user_id", user.id),
            supabase.from("benchmark_results").delete().eq("user_id", user.id),
            supabase.from("monitor_results").delete().eq("user_id", user.id),
