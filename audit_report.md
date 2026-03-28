@@ -38,3 +38,20 @@ While this is likely intended for anonymous benchmarking, it poses a risk of dat
 
 ### Performance Risks
 - **Supabase Storage limits:** Anonymous benchmark results kept indefinitely (if a user maliciously sets `keep_forever` or `keep` to true via API spam) could fill the database over time. The 30-day cleanup helps, but a determined spammer could insert massive amounts of data daily.
+
+## Database Fix for `public.leaderboard`
+
+### Before
+- **leaderboard type**: `VIEW`
+- **run_daily_job behavior**: Cleaned up logs, stored `daily_stats`, but omitted any update logic for the leaderboard.
+- **realtime membership**: `leaderboard` was missing from `supabase_realtime` publication.
+- **leaderboard RLS/policy**: N/A (was a View).
+
+### After
+- **leaderboard type**: `TABLE` matching the frontend's expected properties perfectly.
+- **run_daily_job behavior**: Deletes old logs, truncates/deletes `public.leaderboard` table, recomputes all aggregated statistics for the leaderboard and inserts into the table, and inserts into `daily_stats`. Contains `SECURITY DEFINER`.
+- **realtime membership**: `leaderboard` is added and present in `supabase_realtime` publication.
+- **leaderboard RLS/policy**: Row level security is enabled with a public `SELECT` read access policy `Allow public read access to leaderboard`.
+
+### Caveats / Notes
+- No more caveats remaining. Full app compatibility maintained for the transition. Migration was designed with strict structure matching the original view structure and was successful.
