@@ -1,4 +1,5 @@
 import dns from "node:dns";
+import dnsPacket from "dns-packet";
 
 // api/dns-query.ts
 // Vercel serverless function — Web Fetch API style (Request/Response).
@@ -61,7 +62,7 @@ const DOH_ENDPOINTS: Record<string, string> = {
 const VALID_PROVIDERS = Object.keys(DOH_ENDPOINTS);
 
 const MAX_BATCH_SIZE = 10;
-const CHUNK_SIZE = 3;
+const CHUNK_SIZE = 10;
 const GLOBAL_TIMEOUT = 8000; // ms — safe under Vercel Hobby 10 s limit
 const REQUEST_TIMEOUT = 4000; // ms — per individual DoH fetch
 
@@ -155,14 +156,41 @@ async function resolveDnsQuery(
   const start = Date.now();
 
   try {
-    const response = await fetch(
-      `${url}?name=${encodeURIComponent(domain)}&type=${recordType}`,
-      {
-        method: "GET",
-        headers: { accept: "application/dns-json" },
-        signal: controller.signal,
-      }
-    );
+    let response;
+
+    // Cloudflare, AdGuard, OpenDNS, Quad9 need binary format (via GET base64url). Google and Custom can use JSON.
+    const useBinary = provider === "cloudflare" || provider === "quad9" || provider === "adguard" || provider === "opendns";
+
+    if (useBinary) {
+      const packet = dnsPacket.encode({
+        type: 'query',
+        id: 0,
+        flags: dnsPacket.RECURSION_DESIRED | dnsPacket.AUTHENTIC_DATA,
+        questions: [{
+          type: recordType,
+          name: domain,
+          class: 'IN'
+        }]
+      });
+      const base64Url = Buffer.from(packet).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+      response = await fetch(
+        `${url}?dns=${base64Url}`,
+        {
+          method: "GET",
+          headers: { accept: "application/dns-message" },
+          signal: controller.signal,
+        }
+      );
+    } else {
+      response = await fetch(
+        `${url}?name=${encodeURIComponent(domain)}&type=${recordType}`,
+        {
+          method: "GET",
+          headers: { accept: "application/dns-json" },
+          signal: controller.signal,
+        }
+      );
+    }
 
     clearTimeout(timeoutId);
 
@@ -181,7 +209,11 @@ async function resolveDnsQuery(
       return result;
     }
 
-    await response.json(); // consume body; we only need the RTT
+    if (useBinary) {
+      await response.arrayBuffer(); // consume binary body
+    } else {
+      await response.json(); // consume JSON body
+    }
     const latency = Date.now() - start;
 
     method = "server-doh";
