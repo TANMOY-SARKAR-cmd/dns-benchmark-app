@@ -3,7 +3,6 @@ import dnsPacket from "dns-packet";
 
 export const maxDuration = 15; // seconds
 
-
 // api/dns-query.ts
 // Vercel serverless function — Web Fetch API style (Request/Response).
 // Supports single and batch DNS-over-HTTPS queries with concurrency limiting,
