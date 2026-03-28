@@ -21,7 +21,6 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  measureDoH,
   measureClientDoH,
   DOH_PROVIDERS,
   BenchmarkResult,
@@ -60,7 +59,6 @@ import {
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { AuthButton } from "@/components/AuthButton";
-import { measureDoHBatch } from "@/lib/doh";
 import { toast } from "sonner";
 
 import { BenchmarkTab } from "./tabs/BenchmarkTab";
@@ -109,6 +107,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [customName, setCustomName] = useState("");
   const [customUrl, setCustomUrl] = useState("");
+  const [customFormat, setCustomFormat] = useState<"json" | "binary">("json");
   const [userProviders, setUserProviders] = useState<typeof DOH_PROVIDERS>([
     ...DOH_PROVIDERS,
   ]);
@@ -128,6 +127,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
   const [monitors, setMonitors] = useState<any[]>([]);
   const [monitorResults, setMonitorResults] = useState<Record<string, any>>({});
   const [editingMonitorId, setEditingMonitorId] = useState<string | null>(null);
+  const [selectedMonitorProviders, setSelectedMonitorProviders] = useState<string[]>([]);
   const [monitorDomains, setMonitorDomains] = useState("");
   const [monitorInterval, setMonitorInterval] = useState(60);
   const [isCreatingMonitor, setIsCreatingMonitor] = useState(false);
@@ -215,6 +215,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
         .single();
       if (error && error.code !== "PGRST116") throw error;
       if (data && data.custom_dns_name && data.custom_dns_url) {
+        if (data.custom_dns_format) setCustomFormat(data.custom_dns_format as "json" | "binary");
         setCustomName(data.custom_dns_name);
         setCustomUrl(data.custom_dns_url);
         setUserProviders([
@@ -224,7 +225,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
             name: data.custom_dns_name,
             url: data.custom_dns_url,
             color: "#8b5cf6",
-            format: "json",
+            format: (data.custom_dns_format as "json" | "binary") || "json",
           },
         ]);
       }
@@ -422,6 +423,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
                   tested_at: testedAt,
                   keep_forever: false,
                   monitor_id: monitor.id,
+                  record_type: "A",
                 });
               }
             }
@@ -429,7 +431,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
             if (payload.length > 0) {
               await supabase
                 .from("monitor_results")
-                .insert(payload.map(({ monitor_id, ...rest }) => rest)); // Strictly omitting monitor_id to adhere to required schema
+                .insert(payload);
             }
           } catch (e) {
             console.error("Monitor execution failed for", monitor.id, e);
@@ -463,11 +465,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
           : typeof m.domains === "string"
             ? m.domains.split(",")
             : [],
-        providers: Array.isArray(m.providers)
-          ? m.providers
-          : typeof m.providers === "string"
-            ? m.providers.split(",")
-            : [],
+        providers: m.providers,
       }));
       setMonitors(normalizedMonitors);
     } catch (e) {
@@ -512,7 +510,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
           .from("monitors")
           .update({
             domains,
-            providers: userProviders.map(p => p.name),
+            providers: selectedMonitorProviders,
             interval_seconds: monitorInterval,
           })
           .eq("id", editingMonitorId)
@@ -522,7 +520,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
         const { error: insertError } = await supabase.from("monitors").insert({
           user_id: user.id,
           domains,
-          providers: userProviders.map(p => p.name),
+          providers: selectedMonitorProviders,
           interval_seconds: monitorInterval,
         });
         error = insertError;
@@ -536,6 +534,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
           : "Monitor created successfully"
       );
       setMonitorDomains("");
+      setSelectedMonitorProviders([]);
       setMonitorInterval(60);
       setEditingMonitorId(null);
       fetchMonitors();
@@ -545,6 +544,14 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
     } finally {
       setIsCreatingMonitor(false);
     }
+  };
+
+
+  const handleEditMonitor = (monitor: any) => {
+    setEditingMonitorId(monitor.id);
+    setMonitorDomains(monitor.domains.join("\n"));
+    setMonitorInterval(monitor.interval_seconds);
+    setSelectedMonitorProviders(monitor.providers || []);
   };
 
   const toggleMonitor = async (monitor: any) => {
@@ -840,12 +847,12 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
     try {
       const { error } = await supabase
         .from("benchmark_results")
-        .update({ keep: keepState })
+        .update({ keep_forever: keepState })
         .eq("id", id);
       if (error) throw error;
 
       setHistory(prev =>
-        prev.map(item => (item.id === id ? { ...item, keep: keepState } : item))
+        prev.map(item => (item.id === id ? { ...item, keep_forever: keepState } : item))
       );
       toast.success(keepState ? "Record kept" : "Record discarded");
     } catch (e) {
@@ -1088,6 +1095,8 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
             success: final_success,
             tested_at: new Date().toISOString(),
             method: final_method,
+            error: final_success ? null : "Failed to resolve",
+            record_type: "A",
           });
 
           completed++;
@@ -1251,6 +1260,10 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
             <ErrorBoundary>
             <MonitorsTab
               user={user}
+              editingMonitorId={editingMonitorId}
+              userProviders={userProviders}
+              selectedMonitorProviders={selectedMonitorProviders}
+              setSelectedMonitorProviders={setSelectedMonitorProviders}
               monitors={monitors}
               monitorResults={monitorResults}
               isCreatingMonitor={isCreatingMonitor}
@@ -1261,6 +1274,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
               setMonitorInterval={setMonitorInterval}
               toggleMonitor={toggleMonitor}
               handleDeleteMonitor={handleDeleteMonitor}
+              handleEditMonitor={handleEditMonitor}
               isFetchingData={isFetchingData}
             />
             </ErrorBoundary>
@@ -1298,6 +1312,8 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
             <ErrorBoundary>
             <SettingsTab
               user={user}
+              customFormat={customFormat}
+              setCustomFormat={setCustomFormat}
               customName={customName}
               setCustomName={setCustomName}
               customUrl={customUrl}

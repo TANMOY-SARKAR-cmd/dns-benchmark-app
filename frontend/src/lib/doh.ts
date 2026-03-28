@@ -26,7 +26,7 @@ export const DOH_PROVIDERS: DoHProvider[] = [
   {
     key: "quad9",
     name: "Quad9",
-    url: "https://dns9.quad9.net:5053/dns-query",
+    url: "https://dns.quad9.net/dns-query",
     color: "#9b2226",
     format: "binary",
   },
