@@ -302,6 +302,7 @@ following `INSERT INTO leaderboard` never execute.  **The global leaderboard tab
 
 ---
 
+## Resolved / historical bugs
 ### ✅ 19. All benchmarks record `success=false, method="failed"` — leaderboard shows 100% failure — FIXED
 
 Server-side UDP timeout was updated to 500ms, `REQUEST_TIMEOUT` to 4000ms, `GLOBAL_TIMEOUT` to 8000ms, and `maxDuration` set to 15s in `api/dns-query.ts`.
