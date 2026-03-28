@@ -163,16 +163,16 @@ async function resolveDnsQuery(
 
     if (useBinary) {
       const packet = dnsPacket.encode({
-        type: 'query',
+        type: "query",
         id: 0,
         flags: dnsPacket.RECURSION_DESIRED | dnsPacket.AUTHENTIC_DATA,
         questions: [{
           type: recordType,
           name: domain,
-          class: 'IN'
+          class: "IN"
         }]
       });
-      const base64Url = Buffer.from(packet).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+      const base64Url = Buffer.from(packet).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
       response = await fetch(
         `${url}?dns=${base64Url}`,
         {
