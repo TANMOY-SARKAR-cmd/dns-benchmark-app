@@ -104,7 +104,7 @@ async function jsonQuery(
       headers: {
         Accept: "application/dns-json",
       },
-    });
+    }, 4000);
 
     if (response && latency !== null && response.ok) {
       await response.json();
@@ -155,7 +155,7 @@ async function binaryGetQuery(
         Accept: "application/dns-message",
       },
       mode: "no-cors",
-    });
+    }, 4000);
 
     if (
       response &&
@@ -200,7 +200,7 @@ async function binaryPostQuery(
         Accept: "application/dns-message",
       },
       body: new Uint8Array(packet),
-    });
+    }, 4000);
 
     if (response && latency !== null && response.ok) {
       dnsPacket.decode(new Uint8Array(await response.arrayBuffer()) as any);
@@ -245,7 +245,7 @@ async function resolveClientDNS(
 ): Promise<ResolveDNSResult> {
   const isCustom = !DOH_PROVIDERS.some(p => p.name === provider.name);
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 2000);
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
 
   try {
     let failedCount = 0;
