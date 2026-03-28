@@ -20,7 +20,35 @@ The live app is at https://dns-benchmark-app.vercel.app
 
 ---
 
-### 1. `benchmark_results.keep` → should be `keep_forever`
+### 1. Supabase Realtime not enabled — Live Logs will never receive events
+
+**Root cause:** The commands that add tables to the Supabase Realtime publication exist only in
+`updated-supabase-schema.sql` (lines 112–116):
+```sql
+ALTER PUBLICATION supabase_realtime ADD TABLE dns_queries;
+ALTER PUBLICATION supabase_realtime ADD TABLE benchmark_results;
+ALTER PUBLICATION supabase_realtime ADD TABLE monitor_results;
+ALTER PUBLICATION supabase_realtime ADD TABLE leaderboard;
+ALTER PUBLICATION supabase_realtime ADD TABLE daily_stats;
+```
+These commands are **not present in any migration file** under `supabase/migrations/`. If the project
+was set up via migrations (the normal workflow), the tables were never added to the publication, so
+Supabase Realtime never fires events for them.
+
+**Fix:** Create a new migration file, e.g.
+`supabase/migrations/20260401000000_enable_realtime.sql`, with:
+```sql
+ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.dns_queries;
+ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.benchmark_results;
+ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.monitor_results;
+ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.leaderboard;
+ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.daily_stats;
+```
+Apply via `supabase db push` or by running the migration in the Supabase dashboard SQL editor.
+
+---
+
+### 2. `benchmark_results.keep` → should be `keep_forever`
 
 **File:** `frontend/src/pages/Home.tsx` lines 843 and 848
 
@@ -40,7 +68,7 @@ Also update the in-memory state merge on line 848:
 
 ---
 
-### 2. `monitor_results` inserts strip `monitor_id` — orphaning every row
+### 3. `monitor_results` inserts strip `monitor_id` — orphaning every row
 
 **File:** `frontend/src/pages/Home.tsx` line 432
 
@@ -53,7 +81,8 @@ But `monitor_results.monitor_id` **exists in the schema** (line 37 of `updated-s
 monitor_id uuid REFERENCES public.monitors(id),
 ```
 Without it, monitor results are orphaned — they cannot be associated with their parent monitor when
-queried.
+queried. Additionally the Realtime subscription on `monitor_results` maps events by `monitor_id`
+(Home.tsx line 174–178), so without it monitor result cards will never update.
 
 **Fix:** Remove the `.map(({ monitor_id, ...rest }) => rest)` destructure so `monitor_id` is
 included in each inserted row:
@@ -64,7 +93,7 @@ included in each inserted row:
 
 ---
 
-### 3. `AuthDialog` imports Supabase client from wrong path
+### 4. `AuthDialog` imports Supabase client from wrong path
 
 **File:** `frontend/src/components/AuthDialog.tsx` line 12
 
@@ -72,10 +101,9 @@ included in each inserted row:
 import { supabase } from "@/utils/supabaseClient";
 ```
 
-The path `@/utils/supabaseClient` resolves to `frontend/src/utils/supabaseClient.ts`, which is a
-thin wrapper. All other components import directly from `@/lib/supabase`. More importantly, the
-`@/utils/supabaseClient` module re-exports using a different object shape, which can cause
-runtime errors if the Supabase client is undefined when the dialog opens.
+The path `@/utils/supabaseClient` resolves to `frontend/src/utils/supabaseClient.ts`, which uses
+different environment variable names than the canonical client. All other components import directly
+from `@/lib/supabase`. This can cause the Supabase client to be `undefined` when the dialog opens.
 
 **Fix:**
 ```diff
@@ -85,7 +113,71 @@ runtime errors if the Supabase client is undefined when the dialog opens.
 
 ---
 
-### 4. Quad9 URL mismatch between client and server
+### 5. `delete_user` RPC fails due to foreign key violation + missing profile deletion + missing `search_path`
+
+**Files:**
+- `supabase/migrations/20260321143880_add_delete_user_rpc.sql`
+- `frontend/src/pages/Account.tsx` lines 199–229
+
+**Problem A — FK violation:** The current RPC is:
+```sql
+CREATE OR REPLACE FUNCTION delete_user()
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+  DELETE FROM auth.users WHERE id = auth.uid();
+END; $$;
+```
+`public.profiles` has `id uuid PRIMARY KEY REFERENCES auth.users(id)` **without** `ON DELETE CASCADE`.
+Attempting to `DELETE FROM auth.users` while a `profiles` row references it raises a foreign key
+constraint violation, causing the RPC to always fail.
+
+**Problem B — Missing `search_path`:** `SECURITY DEFINER` functions must include
+`SET search_path = public` to prevent search-path hijacking (project convention).
+
+**Problem C — Fallback leaves `auth.users` intact:** When the RPC fails, `Account.tsx` falls
+back to deleting table data but calls `supabase.auth.signOut()` without deleting `auth.users`.
+The user is signed out but can immediately sign back in to a broken, data-less account.
+The fallback also never deletes the `profiles` row.
+
+**Fix:** Replace the migration content with a corrected RPC (create a new migration
+`supabase/migrations/20260401000001_fix_delete_user_rpc.sql`):
+```sql
+CREATE OR REPLACE FUNCTION public.delete_user()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_uid uuid := auth.uid();
+BEGIN
+  -- Must delete profile first due to FK reference to auth.users
+  DELETE FROM public.profiles WHERE id = v_uid;
+  DELETE FROM public.monitors WHERE user_id = v_uid::text;
+  DELETE FROM public.user_preferences WHERE user_id = v_uid::text;
+  DELETE FROM public.dns_queries WHERE user_id = v_uid::text;
+  DELETE FROM public.benchmark_results WHERE user_id = v_uid::text;
+  DELETE FROM public.monitor_results WHERE user_id = v_uid::text;
+  -- Now safe to delete auth user
+  DELETE FROM auth.users WHERE id = v_uid;
+END;
+$$;
+```
+Also add `profiles` to the client-side fallback in `Account.tsx`:
+```diff
+  await Promise.all([
++   supabase.from("profiles").delete().eq("id", user.id),
+    supabase.from("dns_queries").delete().eq("user_id", user.id),
+    supabase.from("benchmark_results").delete().eq("user_id", user.id),
+    supabase.from("monitor_results").delete().eq("user_id", user.id),
+    supabase.from("monitors").delete().eq("user_id", user.id),
+    supabase.from("user_preferences").delete().eq("user_id", user.id),
+  ]);
+```
+
+---
+
+### 6. Quad9 URL mismatch between client and server
 
 **Frontend:** `frontend/src/lib/doh.ts` line 29
 ```js
@@ -97,25 +189,99 @@ quad9: "https://dns.quad9.net/dns-query",
 ```
 
 These are completely different endpoints. Client-side Quad9 benchmarks use the non-standard port
-5053 endpoint (`dns9.quad9.net:5053`) while the server-side proxy uses the standard endpoint.
-Results are inconsistent and non-comparable between client and server measurements.
+5053 endpoint while the server-side proxy uses the standard endpoint. Results are inconsistent and
+non-comparable between client and server measurements.
 
-**Fix:** Standardize both to the canonical HTTPS/443 endpoint:
+**Fix:**
 ```diff
 # frontend/src/lib/doh.ts line 29
 - url: "https://dns9.quad9.net:5053/dns-query",
 + url: "https://dns.quad9.net/dns-query",
 ```
-(No change needed in `api/dns-query.ts`.)
 
 ---
 
-### 5. `allQueries` never sets the `error` field — error info is always lost
+## HIGH SEVERITY
+
+---
+
+### 7. Leaderboard shows 100% failed — Vercel cron job is never authorized
+
+**File:** `api/daily-job.ts` and `vercel.json`
+
+The global leaderboard (shown to non-logged-in users) is populated by `run_daily_job()` called via
+the Vercel cron at `0 2 * * *`. The handler requires:
+```typescript
+authHeader === `Bearer ${cronSecret}`
+```
+where `cronSecret = process.env.CRON_SECRET`.
+
+If `CRON_SECRET` is not set in the Vercel project environment variables, the handler always
+returns `401 Unauthorized`. The `leaderboard` table is never refreshed, so it either stays empty
+(users see nothing) or shows stale data from when the migration was first applied (possibly all
+zeros because no benchmark data existed yet).
+
+**Fix (two-part):**
+
+1. **Set `CRON_SECRET` in Vercel environment variables.** Vercel automatically sends
+   `Authorization: Bearer {CRON_SECRET}` on cron requests when `CRON_SECRET` is defined. Add any
+   non-empty secret string as `CRON_SECRET` in the Vercel dashboard under Settings → Environment
+   Variables.
+
+2. **Optional — allow unauthorized calls from Vercel's own cron IP range** by also accepting
+   requests with the `x-vercel-cron` request header (which Vercel adds to cron calls):
+   ```typescript
+   const isVercelCron = request.headers.get("x-vercel-cron") === "1";
+   const isAuthorized = isDev || isVercelCron || (
+     !!cronSecret && cronSecret !== "undefined" &&
+     authHeader === `Bearer ${cronSecret}`
+   );
+   ```
+   Note: The `x-vercel-cron` header is only sent by Vercel's cron scheduler and cannot be spoofed
+   from the public internet on Vercel's infrastructure.
+
+---
+
+### 8. Live Logs: same domain+provider entry should update, not duplicate
+
+**File:** `frontend/src/pages/Home.tsx` line 191
+
+The Realtime subscription callback always prepends new entries:
+```typescript
+setLiveLogs(prev => [payload.new, ...prev].slice(0, 50));
+```
+When a user re-runs a benchmark for the same domain and DNS provider, a second row is added instead
+of replacing the first. For a logged-in user's personal view the list grows with stale duplicates.
+
+**Fix:** Update the existing entry for the same `domain + provider` combination if one exists;
+otherwise prepend as a new entry:
+```typescript
+payload => {
+  const newLog = payload.new;
+  setLiveLogs(prev => {
+    const existingIndex = prev.findIndex(
+      log => log.domain === newLog.domain && log.provider === newLog.provider
+    );
+    if (existingIndex !== -1) {
+      // Replace the existing entry in-place
+      const updated = [...prev];
+      updated[existingIndex] = newLog;
+      return updated;
+    }
+    // New entry: prepend and cap at 50
+    return [newLog, ...prev].slice(0, 50);
+  });
+}
+```
+
+---
+
+### 9. `allQueries` never sets the `error` field — error info is always lost
 
 **File:** `frontend/src/pages/Home.tsx` lines 1083–1091 and 1127
 
 When building the `allQueries` array (which feeds both `dns_queries` and `benchmark_results` inserts),
-the `error` field is never set:
+the `error` field is never set, so all failed queries are stored with `error: null`:
 ```js
 allQueries.push({
   user_id: userId,
@@ -128,10 +294,7 @@ allQueries.push({
   // ← error field missing
 });
 ```
-But on line 1127 the code reads `q.error || null`, which is always `null`:
-```js
-error: q.error || null,   // q.error is always undefined
-```
+But on line 1127 the code reads `q.error || null`, which is always `null`.
 
 **Fix:** Add the `error` field to the `allQueries.push()` call:
 ```diff
@@ -142,30 +305,7 @@ error: q.error || null,   // q.error is always undefined
 
 ---
 
-## HIGH SEVERITY
-
----
-
-### 6. Leaderboard sorts the array three times in JSX
-
-**File:** `frontend/src/pages/tabs/LeaderboardTab.tsx` lines 34, 37–38, and 58
-
-The same sort expression is called three separate times on the `leaderboard` array (once to get the
-best provider name, once to get its score, once to render the table rows). Sorting mutates the
-original array (`Array.prototype.sort` is in-place), which can cause subtle rendering
-inconsistencies in React.
-
-**Fix:** Compute the sorted array once in the component body before the return statement:
-```ts
-const sortedLeaderboard = [...leaderboard].sort(
-  (a: any, b: any) => (b.reliability_score || b.score) - (a.reliability_score || a.score)
-);
-```
-Then replace all three inline `.sort(...)` calls with `sortedLeaderboard`.
-
----
-
-### 7. Monitors always save all providers instead of the user's selection
+### 10. Monitors always save all providers instead of the user's selection
 
 **File:** `frontend/src/pages/Home.tsx` lines 515 and 525
 
@@ -182,33 +322,11 @@ checkbox list) and save only those values:
 
 ---
 
-### 8. `handleDeleteAccount` leaves the auth record intact on RPC failure
-
-**File:** `frontend/src/pages/Account.tsx` lines 199–229
-
-If the Supabase RPC `delete_user` fails (e.g., the function doesn't exist — see existing note in
-the code), the fallback code manually deletes data from tables but **cannot delete the auth user**
-from the client side:
-```js
-// We can't delete auth user from client without RPC
-await supabase.auth.signOut();
-```
-The user is signed out but their `auth.users` record still exists. They can sign back in to a
-broken account with no profile data.
-
-**Fix (two options — pick one):**
-- **Option A (preferred):** Ensure the `delete_user` Supabase RPC exists (add it to a migration)
-  so the fallback path is never hit.
-- **Option B:** Display a clear toast/dialog warning the user that full account deletion requires
-  contacting support if the RPC call fails, instead of silently signing them out.
-
----
-
 ## MEDIUM SEVERITY
 
 ---
 
-### 9. `measureDoH` and `measureDoHBatch` are imported but never called
+### 11. `measureDoH` and `measureDoHBatch` are imported but never called
 
 **File:** `frontend/src/pages/Home.tsx` lines 24 and 63
 
@@ -237,7 +355,7 @@ runs the benchmark.
 
 ---
 
-### 10. `monitor_results` inserts don't record `record_type`
+### 12. `monitor_results` inserts don't record `record_type`
 
 **File:** `frontend/src/pages/Home.tsx` lines 394–425 (the monitor payload building block)
 
@@ -265,27 +383,7 @@ choose the record type and store it on the `monitors` table):
 
 ---
 
-### 11. Custom DNS provider format is always hardcoded to `"json"`
-
-**Files:**
-- `frontend/src/pages/Home.tsx` line 227 (preferences load)
-- `frontend/src/pages/tabs/SettingsTab.tsx` line 73 (settings save)
-
-```js
-format: "json",
-```
-
-If a user adds a custom DoH endpoint that only supports the binary DNS-wire format (e.g., a
-self-hosted DoH server using `application/dns-message`), the `jsonQuery` path will be used and
-all queries will fail. There is no way to configure the format.
-
-**Fix:** Add a "Format" dropdown (JSON / Binary) to the custom provider settings form in
-`SettingsTab.tsx`, persist the chosen value in `user_preferences`, and load it back when
-preferences are fetched.
-
----
-
-### 12. `BenchmarkTab` chart filters providers twice inconsistently
+### 13. `BenchmarkTab` chart filters providers twice inconsistently
 
 **File:** `frontend/src/pages/tabs/BenchmarkTab.tsx`
 
@@ -298,7 +396,7 @@ are excluded at the data layer, not just the rendering layer.
 
 ---
 
-### 13. `monitor.providers` format is inconsistent — may be stored as CSV string
+### 14. `monitor.providers` format is inconsistent — may be stored as CSV string
 
 **File:** `frontend/src/pages/Home.tsx` lines 461–470
 
@@ -322,7 +420,7 @@ fallback once the migration is confirmed.
 
 ---
 
-### 14. `frontend/src/lib/monitor.ts` is an empty file
+### 15. `frontend/src/lib/monitor.ts` is an empty file
 
 **File:** `frontend/src/lib/monitor.ts`
 
@@ -331,7 +429,7 @@ file with the monitor helper functions (to keep `Home.tsx` maintainable) or dele
 
 ---
 
-### 15. No frontend validation for custom DNS URL before saving
+### 16. No frontend validation for custom DNS URL before saving
 
 **File:** `frontend/src/pages/tabs/SettingsTab.tsx`
 
@@ -345,7 +443,7 @@ the URL is invalid.
 
 ---
 
-### 16. `allQueries` doesn't include `record_type` — the column exists in `dns_queries`
+### 17. `allQueries` doesn't include `record_type` — the column exists in `dns_queries`
 
 **File:** `frontend/src/pages/Home.tsx` lines 1083–1091
 
@@ -400,6 +498,5 @@ pnpm test
 
 - Do not refactor the component structure or file layout.
 - Do not upgrade dependencies.
-- Do not change the Supabase schema unless explicitly required by a fix above (fixes 1–5 are
-  purely frontend/JS changes; only fix 8 Option A requires a new migration).
+- Do not change the Supabase schema unless explicitly required by a fix above.
 - Do not remove existing tests; add new ones only if a test for the fixed behaviour is missing.
