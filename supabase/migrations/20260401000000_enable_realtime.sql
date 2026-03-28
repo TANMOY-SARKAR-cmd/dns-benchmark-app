@@ -58,4 +58,4 @@ BEGIN
 END;
 $$
 LANGUAGE plpgsql;
--- leaderboard is a view, so it cannot be added to publication.
+ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.leaderboard;
