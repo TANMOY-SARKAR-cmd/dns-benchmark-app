@@ -1,6 +1,9 @@
 import dns from "node:dns";
 import dnsPacket from "dns-packet";
 
+export const maxDuration = 15; // seconds
+
+
 // api/dns-query.ts
 // Vercel serverless function — Web Fetch API style (Request/Response).
 // Supports single and batch DNS-over-HTTPS queries with concurrency limiting,
@@ -19,7 +22,7 @@ const DNS_IPS: Record<string, string> = {
 function resolveWithNativeDNS(
   domain: string,
   nameserver: string,
-  timeoutMs = 2500,
+  timeoutMs = 500,
   recordType: "A" | "AAAA" = "A"
 ): Promise<number | null> {
   return new Promise(resolve => {

@@ -158,7 +158,9 @@ the URL is invalid.
 
 ---
 
-### 🔴 18. `run_daily_job()` crashes — references non-existent `keep` column in `dns_queries`
+### ✅ 18. `run_daily_job()` crashes — references non-existent `keep` column in `dns_queries` — FIXED
+
+Migration `supabase/migrations/20260403000000_leaderboard_table_and_daily_job.sql` was verified to be applied. `leaderboard` is a BASE TABLE and `run_daily_job()` executes successfully without referencing `keep` column.
 
 **Files:** `supabase/migrations/20260321143865_add_method_statistics.sql` (line 15) and
 `supabase/migrations/20260321143870_add_stability_metrics.sql` (line 13)
@@ -300,7 +302,10 @@ following `INSERT INTO leaderboard` never execute.  **The global leaderboard tab
 
 ---
 
-### 🟡 19. All benchmarks record `success=false, method="failed"` — leaderboard shows 100% failure
+### ✅ 19. All benchmarks record `success=false, method="failed"` — leaderboard shows 100% failure — FIXED
+
+Server-side UDP timeout was updated to 500ms, `REQUEST_TIMEOUT` to 4000ms, `GLOBAL_TIMEOUT` to 8000ms, and `maxDuration` set to 15s in `api/dns-query.ts`.
+Client-side timeouts updated to 5000ms for `resolveClientDNS` and 4000ms for `fetchWithTimeout` in `frontend/src/lib/doh.ts`.
 
 **Symptoms visible in the live app:**
 - The personal Leaderboard tab ("Your DNS Performance") shows every provider with `N/A ms` latency,
