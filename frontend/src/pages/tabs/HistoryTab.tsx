@@ -195,7 +195,7 @@ export function HistoryTab({ user, history, handleKeepRecord, userProviders }: a
                           )}
                         </td>
                         <td className="py-3 px-4">
-                          {record.keep ? (
+                          {record.keep_forever ? (
                             <Button size="sm" variant="outline" onClick={() => handleKeepRecord(record.id, false)}>Discard</Button>
                           ) : (
                             <Button size="sm" onClick={() => handleKeepRecord(record.id, true)}>Keep</Button>

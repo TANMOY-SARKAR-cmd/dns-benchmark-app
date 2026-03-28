@@ -431,116 +431,284 @@ pnpm test
 
 ---
 
-## Jules Prompt — Remaining Open Bugs (18 & 19)
-
-Use this prompt verbatim when assigning the remaining work to Jules.
+## Additional bugs discovered after audit (fixed in codebase)
 
 ---
 
-You are fixing the DNS Benchmark App at https://dns-benchmark-app.vercel.app.
+### ✅ 20. `HistoryTab` uses `record.keep` instead of `record.keep_forever` — FIXED
+
+**File:** `frontend/src/pages/tabs/HistoryTab.tsx`
+
+The "Keep / Discard" button condition read `record.keep` but the database column is `keep_forever`
+(bug #2 fixed `Home.tsx` to write `keep_forever`, but the display logic in `HistoryTab.tsx` still
+checked the old `record.keep` field which is never set, causing the button to always show "Keep"
+even for records that had already been kept).
+
+**Fix applied:** Changed `record.keep` → `record.keep_forever` in the button condition.
+
+---
+
+### ✅ 21. `fetchPersonalBest()` not called after benchmark saves — FIXED
+
+**File:** `frontend/src/pages/Home.tsx`
+
+After a benchmark run finishes and results are saved to Supabase, the code called
+`fetchLeaderboard()` and `fetchHistory()` but NOT `fetchPersonalBest()`. This meant the
+"Your Best DNS" cards at the top of the Benchmark tab never reflected results from the just-run
+benchmark without a full page reload.
+
+**Fix applied:** Added `fetchPersonalBest()` immediately after `fetchHistory()` in the
+post-benchmark Supabase save block.
+
+---
+
+### ✅ 22. `Account.tsx` `handleSavePreferences` missing `custom_dns_format` and URL validation — FIXED
+
+**File:** `frontend/src/pages/Account.tsx`
+
+The preferences upsert in Account.tsx omitted the `custom_dns_format` field, so the DNS format
+preference (json vs binary) was silently dropped whenever a user saved from the Account page.
+Additionally there was no URL validation, allowing invalid DoH endpoints to be stored.
+
+**Fix applied:**
+- Added `customFormat` state variable (`useState<"json" | "binary">("json")`).
+- `fetchPreferences` now reads and sets `custom_dns_format` from the DB row.
+- `handleSavePreferences` now validates the custom URL via the shared `validateCustomUrl` helper
+  (imported from `SettingsTab.tsx`) before saving, and includes `custom_dns_format` in the upsert.
+
+---
+
+### ✅ 23. `MonitorsTab` interval display shows raw decimal for sub-minute intervals — FIXED
+
+**File:** `frontend/src/pages/tabs/MonitorsTab.tsx`
+
+The monitor card displayed `{monitor.interval_seconds / 60} minutes` which showed confusing
+decimals for short intervals (e.g. "0.16666... minutes" for a 10-second interval).
+
+**Fix applied:** The display now shows `X seconds` for intervals less than 60 seconds, and
+`X minute(s)` for intervals ≥ 60 seconds. For example: "10 seconds", "30 seconds", "1 minute",
+"5 minutes".
+
+---
+
+## Jules Prompt — Phase-Wise Instructions for Remaining Work
+
+All **code** bugs (1–23) are now ✅ FIXED in the repository. The remaining work is
+**database and deployment verification** — Jules must use Supabase MCP and the Vercel dashboard
+to confirm the live environment matches the codebase.
+
+Use the prompts below one phase at a time. Complete each phase fully before starting the next.
+
+---
+
+### Phase 1 — Verify live Supabase schema matches migrations
+
+**Prompt for Jules:**
+
+You are verifying the DNS Benchmark App at https://dns-benchmark-app.vercel.app.
 Repo: TANMOY-SARKAR-cmd/dns-benchmark-app
-You have Supabase MCP access — use it to inspect the live schema and apply/verify migrations.
-agent.md tracks all known bugs. Items 1–17 are ✅ FIXED. Two bugs remain open (18 and 19).
+You have Supabase MCP access.
+All code bugs are fixed. Your only job in this phase is to check that every migration has been
+applied to the live database. Do NOT write any code. Only run SQL queries.
 
----
+Run each query below using Supabase MCP and record the result:
 
-### 🔴 Bug 18: run_daily_job() crashes — leaderboard never refreshed
-
-Migration `supabase/migrations/20260403000000_leaderboard_table_and_daily_job.sql` contains the
-full fix: converts leaderboard VIEW → TABLE, recreates run_daily_job() with cleanup + leaderboard
-recompute + daily_stats, enables RLS + public SELECT, and adds the table to the realtime publication.
-
-**Action:**
-
-1. Use Supabase MCP to verify whether the migration was already applied:
+1. Confirm `leaderboard` is a TABLE (not a VIEW):
    ```sql
-   SELECT table_type FROM information_schema.tables
+   SELECT table_type
+   FROM information_schema.tables
    WHERE table_schema = 'public' AND table_name = 'leaderboard';
-   -- Must return TABLE (not VIEW)
    ```
+   Expected: `BASE TABLE`. If it returns `VIEW` or nothing, apply the full SQL from
+   `supabase/migrations/20260403000000_leaderboard_table_and_daily_job.sql`.
 
-2. Verify run_daily_job() no longer references the nonexistent `keep` column:
+2. Confirm `run_daily_job()` does NOT reference the removed `keep` column:
    ```sql
    SELECT prosrc FROM pg_proc WHERE proname = 'run_daily_job';
-   -- Must NOT contain "AND keep = false"
    ```
+   The function body must NOT contain the string `AND keep = false`. If it does, apply the
+   migration `supabase/migrations/20260403000000_leaderboard_table_and_daily_job.sql`.
 
-3. If the migration was NOT applied, apply the full SQL from
-   `supabase/migrations/20260403000000_leaderboard_table_and_daily_job.sql` via the Supabase MCP
-   SQL editor.
-
-4. Manually trigger run_daily_job() to confirm it runs without error:
+3. Confirm the `leaderboard` table has the expected columns:
    ```sql
-   SELECT public.run_daily_job();
+   SELECT column_name, data_type
+   FROM information_schema.columns
+   WHERE table_schema = 'public' AND table_name = 'leaderboard'
+   ORDER BY ordinal_position;
    ```
+   Expected columns: `provider`, `avg_latency`, `latency_stddev`, `success_rate`, `sample_count`,
+   `score`, `reliability_score`, `udp_percentage`, `doh_percentage`, `fallback_percentage`,
+   `failure_percentage`, `stability_status`, `last_updated`.
 
-5. Verify the leaderboard table has rows:
+4. Confirm RLS is enabled and a public SELECT policy exists:
    ```sql
-   SELECT provider, avg_latency, success_rate, sample_count FROM public.leaderboard;
+   SELECT relrowsecurity FROM pg_class WHERE relname = 'leaderboard';
+   SELECT policyname, cmd FROM pg_policies WHERE tablename = 'leaderboard';
    ```
-   If no rows exist, check that benchmark_results and monitor_results contain data from the last
-   30 days (see Bug 19 below).
+   `relrowsecurity` must be `true`. There must be a policy with `cmd = 'SELECT'`.
+
+5. Confirm the `delete_user` RPC exists and is SECURITY DEFINER:
+   ```sql
+   SELECT proname, prosecdef FROM pg_proc WHERE proname = 'delete_user';
+   ```
+   `prosecdef` must be `true`.
+
+6. Confirm `benchmark_results` has `keep_forever` (not `keep`):
+   ```sql
+   SELECT column_name FROM information_schema.columns
+   WHERE table_name = 'benchmark_results' AND column_name IN ('keep', 'keep_forever');
+   ```
+   Must return `keep_forever` only.
+
+7. Confirm `dns_queries` has `is_kept` column:
+   ```sql
+   SELECT column_name FROM information_schema.columns
+   WHERE table_name = 'dns_queries' AND column_name = 'is_kept';
+   ```
+   Must return one row.
+
+After running all queries, report which checks passed and which failed. If any failed, apply the
+required migration(s) and re-run the checks until all pass. Then update agent.md to record the
+verification date and results.
 
 ---
 
-### 🟡 Bug 19: All benchmarks record success=false — leaderboard shows 100% failure
+### Phase 2 — Trigger `run_daily_job()` and verify leaderboard data
 
-**Root cause investigation:**
+**Prompt for Jules:**
 
-1. Check live data with Supabase MCP:
+You are verifying the DNS Benchmark App leaderboard pipeline.
+Repo: TANMOY-SARKAR-cmd/dns-benchmark-app
+You have Supabase MCP access.
+Phase 1 (schema verification) must be complete before starting this phase.
+
+1. Check whether `benchmark_results` or `monitor_results` contain any rows from the last 30 days:
    ```sql
-   SELECT provider, COUNT(*) AS total,
-          SUM(CASE WHEN success THEN 1 ELSE 0 END) AS successes,
-          COUNT(DISTINCT method) AS distinct_methods
-   FROM public.benchmark_results
-   GROUP BY provider ORDER BY provider;
-
-   SELECT provider, COUNT(*) AS total,
-          SUM(CASE WHEN success THEN 1 ELSE 0 END) AS successes,
-          COUNT(DISTINCT method) AS distinct_methods
-   FROM public.dns_queries
-   GROUP BY provider ORDER BY provider;
+   SELECT
+     (SELECT COUNT(*) FROM public.benchmark_results WHERE tested_at >= NOW() - INTERVAL '30 days') AS benchmark_count,
+     (SELECT COUNT(*) FROM public.monitor_results   WHERE tested_at >= NOW() - INTERVAL '30 days') AS monitor_count;
    ```
-   If all rows have success=false, server-side DNS resolution is failing for every query.
+   If both counts are 0, the leaderboard will be empty after running the daily job — that is
+   expected. Note the counts and continue.
 
-2. **Verify server-side timeouts** in `api/dns-query.ts` are already set to the correct values:
-   - `resolveWithNativeDNS(domain, udpIp, 500, recordType)` — UDP timeout must be 500 ms
-   - `REQUEST_TIMEOUT = 4000` — per-DoH-fetch timeout must be 4000 ms
-   - `GLOBAL_TIMEOUT = 8000` — overall batch timeout must be 8000 ms
-   If any of these differ from the values above, update them.
-
-3. **Add maxDuration export** to `api/dns-query.ts` if not already present, so Vercel allocates
-   more execution time to the function:
-   ```typescript
-   export const maxDuration = 15; // seconds
-   ```
-   Place it near the top of the file, after the imports.
-
-4. **Apply client-side timeout fix** in `frontend/src/lib/doh.ts`:
-
-   a. In the `resolveClientDNS` function, increase the abort controller timeout from 2000 ms to
-      5000 ms:
-      ```diff
-      - const timeoutId = setTimeout(() => controller.abort(), 2000);
-      + const timeoutId = setTimeout(() => controller.abort(), 5000);
-      ```
-
-   b. Find every `fetchWithTimeout` call inside `jsonQuery`, `binaryGetQuery`, and
-      `binaryPostQuery`. The function signature is `fetchWithTimeout(url, options, timeoutMs)`
-      where `timeoutMs` defaults to 2000. Change each call to pass 4000 as the third argument.
-
-5. After applying all fixes, trigger a test benchmark from the live app, then verify:
-   ```sql
-   SELECT provider, success, method FROM public.benchmark_results
-   ORDER BY tested_at DESC LIMIT 20;
-   ```
-   At least some rows must now have `success = true`.
-
-6. Finally, manually trigger run_daily_job() and confirm the leaderboard reflects real scores:
+2. Manually trigger `run_daily_job()`:
    ```sql
    SELECT public.run_daily_job();
-   SELECT provider, avg_latency, success_rate, stability_status FROM public.leaderboard;
    ```
+   If this returns an error, record the full error text, find the cause in the function body
+   (`SELECT prosrc FROM pg_proc WHERE proname = 'run_daily_job';`), fix it, and re-run.
+
+3. Check the leaderboard table:
+   ```sql
+   SELECT provider, avg_latency, success_rate, sample_count, stability_status
+   FROM public.leaderboard
+   ORDER BY reliability_score DESC NULLS LAST;
+   ```
+   If rows exist: ✅ leaderboard is working. Record the result in agent.md.
+   If no rows exist and benchmark_count > 0: there is a bug in the leaderboard INSERT — inspect
+   `run_daily_job()` source and fix the SQL.
+
+4. Confirm `daily_stats` table is being populated:
+   ```sql
+   SELECT date, provider, avg_latency, success_rate, sample_count
+   FROM public.daily_stats
+   ORDER BY date DESC
+   LIMIT 10;
+   ```
+
+5. Update agent.md: mark this phase as completed, note the date, and record the leaderboard row
+   count and whether `run_daily_job()` ran without errors.
+
+---
+
+### Phase 3 — Verify Vercel deployment and cron configuration
+
+**Prompt for Jules:**
+
+You are verifying the production deployment of the DNS Benchmark App.
+Repo: TANMOY-SARKAR-cmd/dns-benchmark-app
+You do NOT need Supabase MCP for this phase — all checks are in the Vercel dashboard.
+
+1. Open the Vercel dashboard for the `dns-benchmark-app` project.
+
+2. Check **Settings → Environment Variables** and confirm the following are set for **Production**:
+   - `VITE_SUPABASE_URL` — the Supabase project URL
+   - `VITE_SUPABASE_ANON_KEY` — the Supabase anon key
+   - `SUPABASE_SERVICE_ROLE_KEY` — the Supabase service role key (used by `api/daily-job.ts`)
+   - `CRON_SECRET` — a secret string; must match what Vercel sends as `x-vercel-cron` or Bearer
+     token in the Authorization header when the cron fires
+   If any are missing, add them now (obtain values from the Supabase project settings page).
+
+3. Check **Settings → Cron Jobs** and confirm the cron is configured:
+   - Path: `/api/daily-job`
+   - Schedule: `0 2 * * *` (daily at 02:00 UTC)
+   If the cron job is missing, add it (or verify `vercel.json` crons section is correct and
+   re-deploy).
+
+4. Check **Deployments** — confirm the latest deployment is from the `main` branch and its status
+   is **Ready**. If it is stale or failed, trigger a redeploy.
+
+5. Check **Logs → Functions** for `/api/dns-query` — look at the last 5 invocations and confirm
+   the batch log line shows `"successCount": N` where N > 0. If every call has `successCount: 0`,
+   the DNS resolution is still failing — investigate Vercel outbound network restrictions.
+
+6. Update agent.md: note which env vars were present / added, whether the cron was configured,
+   and whether `/api/dns-query` logs show successful queries.
+
+---
+
+### Phase 4 — End-to-end verification (run benchmark → check DB → check UI)
+
+**Prompt for Jules:**
+
+You are doing final end-to-end verification of the DNS Benchmark App.
+Repo: TANMOY-SARKAR-cmd/dns-benchmark-app
+Phases 1, 2, and 3 must be complete before starting this phase.
+
+1. Open https://dns-benchmark-app.vercel.app in a browser (incognito is fine).
+
+2. In the **Benchmark** tab, enter 3 domains (e.g. `google.com`, `github.com`, `cloudflare.com`)
+   and click **Run DNS Test**. Wait for it to complete.
+
+3. Check the results table — at least some rows must show **Server** or **Client Fallback** status
+   (green or blue badge), not just "Failed" (red). If all rows show "Failed", the DNS resolution
+   pipeline is broken — re-check Phase 3 step 5 and the Vercel function logs.
+
+4. Log in with a test account. After logging in, run the same benchmark again. Then:
+   a. Verify the "Your Best DNS" cards at the top of the Benchmark tab update to show the
+      provider with the lowest average latency from your test.
+   b. Check the **Leaderboard** tab — it should now show "Your DNS Performance" with your
+      results aggregated.
+   c. Check the **History** tab — the latest benchmark rows should appear, and the
+      "Keep" / "Discard" button should reflect the actual `keep_forever` value (default: Discard).
+   d. Check the **Live Logs** tab — it should show the DNS queries from your just-run benchmark.
+
+5. Use Supabase MCP to confirm rows were inserted correctly:
+   ```sql
+   SELECT provider, latency_ms, success, method, tested_at
+   FROM public.dns_queries
+   ORDER BY tested_at DESC
+   LIMIT 15;
+   ```
+   At least some rows must have `success = true`.
+
+   ```sql
+   SELECT provider, latency_ms, success, method, tested_at
+   FROM public.benchmark_results
+   ORDER BY tested_at DESC
+   LIMIT 15;
+   ```
+
+6. Trigger `run_daily_job()` one more time to confirm the leaderboard picks up the fresh data:
+   ```sql
+   SELECT public.run_daily_job();
+   SELECT provider, avg_latency, success_rate, stability_status
+   FROM public.leaderboard
+   ORDER BY reliability_score DESC NULLS LAST;
+   ```
+
+7. Update agent.md: mark Phase 4 as complete, note the date, record the overall pass/fail
+   result for each verification step, and add a final "All bugs verified fixed" summary line.
 
 ---
 
@@ -553,12 +721,6 @@ recompute + daily_stats, enables RLS + public SELECT, and adds the table to the 
   `user_id` and aggregates in JavaScript — correct as-is.
 - **Global leaderboard** (logged-out view): reads from the `leaderboard` TABLE which is populated
   by `run_daily_job()` aggregating `benchmark_results + monitor_results` from the last 30 days.
-- This data flow is correct. Once bugs 18 and 19 are fixed the leaderboard will work end-to-end.
-
----
-
-### After fixing both bugs, update agent.md:
-
-- Mark Bug 18 as ✅ FIXED — state which migration was applied / verified.
-- Mark Bug 19 as ✅ FIXED — list the specific file changes made (timeouts, maxDuration).
+- This data flow is correct. All code bugs are fixed. The remaining risk is the live DB or
+  environment configuration not matching the repo.
 

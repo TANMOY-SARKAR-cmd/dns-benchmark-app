@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { Github, CheckCircle2, Mail, Trash2, Home, Globe, Moon, Sun, Download, Trash } from "lucide-react";
 import { DiscordLogoIcon } from "@radix-ui/react-icons";
 import { useNavigate } from "react-router-dom";
+import { validateCustomUrl } from "@/pages/tabs/SettingsTab";
 
 export default function Account() {
   const { user, profile, refreshProfile } = useAuth();
@@ -34,6 +35,7 @@ export default function Account() {
   const [isSavingPrefs, setIsSavingPrefs] = useState(false);
   const [customName, setCustomName] = useState("");
   const [customUrl, setCustomUrl] = useState("");
+  const [customFormat, setCustomFormat] = useState<"json" | "binary">("json");
   const [monitorInterval, setMonitorInterval] = useState(60);
   const [defaultDomains, setDefaultDomains] = useState("");
 
@@ -67,6 +69,7 @@ export default function Account() {
       if (data) {
         setCustomName(data.custom_dns_name || "");
         setCustomUrl(data.custom_dns_url || "");
+        setCustomFormat((data.custom_dns_format as "json" | "binary") || "json");
         // Default interval handling could be added here if it was in the schema
       }
     } catch (e) {
@@ -117,6 +120,12 @@ export default function Account() {
   };
 
   const handleSavePreferences = async () => {
+    if (customUrl && !validateCustomUrl(customUrl)) {
+      toast.error("Invalid DoH URL", {
+        description: "URL must be HTTPS and cannot resolve to a private IP or local domain.",
+      });
+      return;
+    }
     setIsSavingPrefs(true);
     try {
       const { error } = await supabase
@@ -126,6 +135,7 @@ export default function Account() {
             user_id: user.id,
             custom_dns_name: customName || null,
             custom_dns_url: customUrl || null,
+            custom_dns_format: customFormat || "json",
           },
           { onConflict: "user_id" }
         );

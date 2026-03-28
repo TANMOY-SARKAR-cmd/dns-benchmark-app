@@ -6,6 +6,12 @@ import { isSupabaseConfigured } from "@/config/env";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 
+function formatInterval(seconds: number): string {
+  if (seconds < 60) return `${seconds} second${seconds === 1 ? "" : "s"}`;
+  const minutes = seconds / 60;
+  return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+}
+
 export function MonitorsTab({
   editingMonitorId,
   userProviders,
@@ -127,7 +133,7 @@ export function MonitorsTab({
                           </div>
                           <div className="flex items-center gap-2 text-sm text-muted-foreground">
                             <Clock className="w-4 h-4" />
-                            <span>Runs every {monitor.interval_seconds / 60} minutes</span>
+                            <span>Runs every {formatInterval(monitor.interval_seconds)}</span>
                           </div>
                           <div className="flex items-center gap-2 text-sm text-muted-foreground">
                             <History className="w-4 h-4" />
