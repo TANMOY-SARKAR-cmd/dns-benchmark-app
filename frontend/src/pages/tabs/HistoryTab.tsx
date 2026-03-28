@@ -50,13 +50,6 @@ export function HistoryTab({ user, history, handleKeepRecord, userProviders }: a
             Export CSV
           </Button>
           <Button
-            variant={isCompareMode ? "default" : "outline"}
-            size="sm"
-            onClick={() => setIsCompareMode(!isCompareMode)}
-          >
-            {isCompareMode ? "Cancel Compare" : "Compare Runs"}
-          </Button>
-          <Button
             variant="outline"
             size="sm"
             onClick={() => {

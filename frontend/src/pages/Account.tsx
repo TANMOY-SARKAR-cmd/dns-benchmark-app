@@ -239,8 +239,6 @@ export default function Account() {
   const githubIdentity = getProviderIdentity("github");
   const discordIdentity = getProviderIdentity("discord");
   const emailIdentity = getProviderIdentity("email");
-  const web3Identity = getProviderIdentity("ethereum");
-
   const handleLinkProvider = async (provider: "github" | "discord") => {
     setIsLoadingConnection(provider);
     try {
@@ -275,23 +273,6 @@ export default function Account() {
       setIsLoadingConnection(null);
     }
   };
-
-  const handleLinkWeb3 = async () => {
-    setIsLoadingConnection("web3");
-    try {
-      // @ts-ignore
-      const { error } = await supabase.auth.linkIdentity({
-        provider: "ethereum",
-        chain: "ethereum",
-      });
-      if (error) throw error;
-    } catch (error: any) {
-      toast.error(error.message || "An unexpected error occurred");
-    } finally {
-      setIsLoadingConnection(null);
-    }
-  };
-
   const handleUnlinkProvider = async (identity: any, provider: string) => {
     if (totalIdentities <= 1) {
       return toast.error("You cannot unlink your only remaining login method.");
@@ -461,32 +442,7 @@ export default function Account() {
                   </div>
                   <span className="font-medium text-sm">Web3 Wallet</span>
                 </div>
-                {web3Identity ? (
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1.5 text-xs font-medium text-green-600 dark:text-green-500 bg-green-50 dark:bg-green-950/30 px-2 py-1 rounded-full">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Connected
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-slate-500 hover:text-red-500"
-                      onClick={() => handleUnlinkProvider(web3Identity, "Web3 Wallet")}
-                      disabled={!!isLoadingConnection || totalIdentities <= 1}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                ) : (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 gap-2 text-xs"
-                    onClick={handleLinkWeb3}
-                    disabled={!!isLoadingConnection}
-                  >
-                    {isLoadingConnection === "web3" ? "Linking..." : "Link"}
-                  </Button>
-                )}
+
               </div>
 
               {/* Email */}
