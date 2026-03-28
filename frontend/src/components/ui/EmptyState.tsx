@@ -22,7 +22,7 @@ export function EmptyState({
       <h4 className="text-sm font-medium text-slate-900 dark:text-slate-200">
         {title}
       </h4>
-      <p className="text-sm text-slate-500 mt-1 max-w-sm">{description}</p>
+      <p className="text-sm text-slate-500 mt-1 ">{description}</p>
       {actionLabel && onAction && (
         <Button onClick={onAction} className="mt-4" variant="outline">
           {actionLabel}

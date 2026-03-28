@@ -42,7 +42,7 @@ export function LeaderboardTab({ user, leaderboard, userProviders, isFetchingDat
             <div className="rounded-md border">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
-                  <thead className="text-xs text-slate-500 bg-slate-50 dark:bg-slate-800 uppercase">
+                  <thead className="text-xs text-slate-500 bg-slate-50 dark:bg-slate-800 uppercase whitespace-nowrap">
                     <tr>
                       <th className="px-4 py-3 font-medium">Rank</th>
                       <th className="px-4 py-3 font-medium">Provider</th>
