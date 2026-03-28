@@ -423,3 +423,136 @@ pnpm test
 - Do not remove existing tests; add new ones only if a test for the fixed behaviour is missing.
 - Do not guess — use the Supabase MCP to check the actual live schema before writing migrations.
 
+---
+
+## Jules Prompt — Remaining Open Bugs (18 & 19)
+
+Use this prompt verbatim when assigning the remaining work to Jules.
+
+---
+
+You are fixing the DNS Benchmark App at https://dns-benchmark-app.vercel.app.
+Repo: TANMOY-SARKAR-cmd/dns-benchmark-app
+You have Supabase MCP access — use it to inspect the live schema and apply/verify migrations.
+agent.md tracks all known bugs. Items 1–17 are ✅ FIXED. Two bugs remain open (18 and 19).
+
+---
+
+### 🔴 Bug 18: run_daily_job() crashes — leaderboard never refreshed
+
+Migration `supabase/migrations/20260403000000_leaderboard_table_and_daily_job.sql` contains the
+full fix: converts leaderboard VIEW → TABLE, recreates run_daily_job() with cleanup + leaderboard
+recompute + daily_stats, enables RLS + public SELECT, and adds the table to the realtime publication.
+
+**Action:**
+
+1. Use Supabase MCP to verify whether the migration was already applied:
+   ```sql
+   SELECT table_type FROM information_schema.tables
+   WHERE table_schema = 'public' AND table_name = 'leaderboard';
+   -- Must return TABLE (not VIEW)
+   ```
+
+2. Verify run_daily_job() no longer references the nonexistent `keep` column:
+   ```sql
+   SELECT prosrc FROM pg_proc WHERE proname = 'run_daily_job';
+   -- Must NOT contain "AND keep = false"
+   ```
+
+3. If the migration was NOT applied, apply the full SQL from
+   `supabase/migrations/20260403000000_leaderboard_table_and_daily_job.sql` via the Supabase MCP
+   SQL editor.
+
+4. Manually trigger run_daily_job() to confirm it runs without error:
+   ```sql
+   SELECT public.run_daily_job();
+   ```
+
+5. Verify the leaderboard table has rows:
+   ```sql
+   SELECT provider, avg_latency, success_rate, sample_count FROM public.leaderboard;
+   ```
+   If no rows exist, check that benchmark_results and monitor_results contain data from the last
+   30 days (see Bug 19 below).
+
+---
+
+### 🟡 Bug 19: All benchmarks record success=false — leaderboard shows 100% failure
+
+**Root cause investigation:**
+
+1. Check live data with Supabase MCP:
+   ```sql
+   SELECT provider, COUNT(*) AS total,
+          SUM(CASE WHEN success THEN 1 ELSE 0 END) AS successes,
+          COUNT(DISTINCT method) AS distinct_methods
+   FROM public.benchmark_results
+   GROUP BY provider ORDER BY provider;
+
+   SELECT provider, COUNT(*) AS total,
+          SUM(CASE WHEN success THEN 1 ELSE 0 END) AS successes,
+          COUNT(DISTINCT method) AS distinct_methods
+   FROM public.dns_queries
+   GROUP BY provider ORDER BY provider;
+   ```
+   If all rows have success=false, server-side DNS resolution is failing for every query.
+
+2. **Verify server-side timeouts** in `api/dns-query.ts` are already set to the correct values:
+   - `resolveWithNativeDNS(domain, udpIp, 500, recordType)` — UDP timeout must be 500 ms
+   - `REQUEST_TIMEOUT = 4000` — per-DoH-fetch timeout must be 4000 ms
+   - `GLOBAL_TIMEOUT = 8000` — overall batch timeout must be 8000 ms
+   If any of these differ from the values above, update them.
+
+3. **Add maxDuration export** to `api/dns-query.ts` if not already present, so Vercel allocates
+   more execution time to the function:
+   ```typescript
+   export const maxDuration = 15; // seconds
+   ```
+   Place it near the top of the file, after the imports.
+
+4. **Apply client-side timeout fix** in `frontend/src/lib/doh.ts`:
+
+   a. In the `resolveClientDNS` function, increase the abort controller timeout from 2000 ms to
+      5000 ms:
+      ```diff
+      - const timeoutId = setTimeout(() => controller.abort(), 2000);
+      + const timeoutId = setTimeout(() => controller.abort(), 5000);
+      ```
+
+   b. Find every `fetchWithTimeout` call inside `jsonQuery`, `binaryGetQuery`, and
+      `binaryPostQuery`. The function signature is `fetchWithTimeout(url, options, timeoutMs)`
+      where `timeoutMs` defaults to 2000. Change each call to pass 4000 as the third argument.
+
+5. After applying all fixes, trigger a test benchmark from the live app, then verify:
+   ```sql
+   SELECT provider, success, method FROM public.benchmark_results
+   ORDER BY tested_at DESC LIMIT 20;
+   ```
+   At least some rows must now have `success = true`.
+
+6. Finally, manually trigger run_daily_job() and confirm the leaderboard reflects real scores:
+   ```sql
+   SELECT public.run_daily_job();
+   SELECT provider, avg_latency, success_rate, stability_status FROM public.leaderboard;
+   ```
+
+---
+
+### Leaderboard data flow (context — no code changes needed here)
+
+- **Manual benchmark** (`runBenchmark` in `Home.tsx`) inserts results into BOTH `dns_queries`
+  AND `benchmark_results`.
+- **Cron monitor** (`api/daily-job.ts` → `run_daily_job()` RPC) inserts into `monitor_results`.
+- **Personal leaderboard** (logged-in view): `fetchLeaderboard()` reads `dns_queries` filtered by
+  `user_id` and aggregates in JavaScript — correct as-is.
+- **Global leaderboard** (logged-out view): reads from the `leaderboard` TABLE which is populated
+  by `run_daily_job()` aggregating `benchmark_results + monitor_results` from the last 30 days.
+- This data flow is correct. Once bugs 18 and 19 are fixed the leaderboard will work end-to-end.
+
+---
+
+### After fixing both bugs, update agent.md:
+
+- Mark Bug 18 as ✅ FIXED — state which migration was applied / verified.
+- Mark Bug 19 as ✅ FIXED — list the specific file changes made (timeouts, maxDuration).
+
