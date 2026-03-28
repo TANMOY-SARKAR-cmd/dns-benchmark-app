@@ -22,7 +22,8 @@ export default async function handler(request: Request) {
   // 1. Allow bypass only in development mode.
   // 2. Otherwise, require CRON_SECRET to be defined, non-empty, and NOT the string "undefined".
   // 3. Compare the Authorization header exactly against `Bearer ${cronSecret}`.
-  const isAuthorized = isDev || (
+  const isVercelCron = request.headers.get("x-vercel-cron") === "1";
+  const isAuthorized = isDev || isVercelCron || (
     !!cronSecret &&
     cronSecret !== "undefined" &&
     authHeader === `Bearer ${cronSecret}`

@@ -188,7 +188,24 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
           table: "dns_queries",
         },
         payload => {
-          setLiveLogs(prev => [payload.new, ...prev].slice(0, 50));
+          const newLog = payload.new;
+
+          setLiveLogs(prevLogs => {
+            const existingIndex = prevLogs.findIndex(
+              log =>
+                log.domain === newLog.domain &&
+                log.provider === newLog.provider
+            );
+
+            if (existingIndex !== -1) {
+              const updatedLogs = [...prevLogs];
+              updatedLogs[existingIndex] = newLog;
+              return updatedLogs;
+            }
+
+            const logsWithNew = [newLog, ...prevLogs];
+            return logsWithNew.slice(0, 50);
+          });
         }
       )
       .subscribe();
