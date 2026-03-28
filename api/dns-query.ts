@@ -62,8 +62,8 @@ const VALID_PROVIDERS = Object.keys(DOH_ENDPOINTS);
 
 const MAX_BATCH_SIZE = 10;
 const CHUNK_SIZE = 3;
-const GLOBAL_TIMEOUT = 4500; // ms — safe under Vercel Hobby 10 s limit
-const REQUEST_TIMEOUT = 2500; // ms — per individual DoH fetch
+const GLOBAL_TIMEOUT = 8000; // ms — safe under Vercel Hobby 10 s limit
+const REQUEST_TIMEOUT = 4000; // ms — per individual DoH fetch
 
 export function validateCustomUrl(url: string): boolean {
   try {
@@ -130,7 +130,7 @@ async function resolveDnsQuery(
   let method: DnsResult["method"] = "failed";
 
   if (udpIp) {
-    const nativeLatency = await resolveWithNativeDNS(domain, udpIp, 2500, recordType);
+    const nativeLatency = await resolveWithNativeDNS(domain, udpIp, 500, recordType);
     if (nativeLatency !== null) {
       method = "server-udp";
       const result: DnsResult = {
