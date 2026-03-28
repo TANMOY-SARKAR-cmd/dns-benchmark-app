@@ -108,3 +108,6 @@ temp/
 
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/
+frontend/package-lock.json
+frontend/dist/
+frontend/node_modules/
