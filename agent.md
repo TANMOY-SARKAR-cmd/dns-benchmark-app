@@ -1,8 +1,10 @@
 # DNS Benchmark App — Bug Fix Guide for Jules
 
-This document lists every confirmed logic error and broken feature found in the codebase.
-Fix them **in order of severity** without refactoring unrelated code.
+This document tracks every confirmed logic error and broken feature found in the codebase.
+Fix open items **in order of severity** without refactoring unrelated code.
 The live app is at https://dns-benchmark-app.vercel.app
+
+Jules has Supabase MCP access — use it to inspect the live database schema, run SQL, and apply/verify migrations.
 
 ---
 
@@ -16,188 +18,55 @@ The live app is at https://dns-benchmark-app.vercel.app
 
 ---
 
+## Status legend
+
+- ✅ FIXED — confirmed resolved in current codebase
+- 🔴 OPEN — still broken; Jules must fix this
+- 🟡 INVESTIGATE — root cause uncertain; Jules must diagnose then fix
+
+---
+
 ## CRITICAL — Fix these first
 
 ---
 
-### 1. Supabase Realtime not enabled — Live Logs will never receive events
+### ✅ 1. Supabase Realtime not enabled — FIXED
 
-**Root cause:** The commands that add tables to the Supabase Realtime publication exist only in
-`updated-supabase-schema.sql` (lines 112–116):
-```sql
-ALTER PUBLICATION supabase_realtime ADD TABLE dns_queries;
-ALTER PUBLICATION supabase_realtime ADD TABLE benchmark_results;
-ALTER PUBLICATION supabase_realtime ADD TABLE monitor_results;
-ALTER PUBLICATION supabase_realtime ADD TABLE leaderboard;
-ALTER PUBLICATION supabase_realtime ADD TABLE daily_stats;
-```
-These commands are **not present in any migration file** under `supabase/migrations/`. If the project
-was set up via migrations (the normal workflow), the tables were never added to the publication, so
-Supabase Realtime never fires events for them.
-
-**Fix:** Create a new migration file, e.g.
-`supabase/migrations/20260401000000_enable_realtime.sql`, with:
-```sql
-ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.dns_queries;
-ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.benchmark_results;
-ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.monitor_results;
-ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.leaderboard;
-ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.daily_stats;
-```
-Apply via `supabase db push` or by running the migration in the Supabase dashboard SQL editor.
+Migration `supabase/migrations/20260401000000_enable_realtime.sql` now adds all tables to the
+`supabase_realtime` publication using idempotent `IF NOT EXISTS` checks.
+Verify via Supabase MCP that the tables appear in the publication.
 
 ---
 
-### 2. `benchmark_results.keep` → should be `keep_forever`
+### ✅ 2. `benchmark_results.keep` → `keep_forever` — FIXED
 
-**File:** `frontend/src/pages/Home.tsx` lines 843 and 848
-
-The database column is named `keep_forever` (see `updated-supabase-schema.sql` line 78), but the
-frontend calls `.update({ keep: keepState })`. This silently fails — Supabase ignores unknown columns.
-
-**Fix:**
-```diff
-- .update({ keep: keepState })
-+ .update({ keep_forever: keepState })
-```
-Also update the in-memory state merge on line 848:
-```diff
-- prev.map(item => (item.id === id ? { ...item, keep: keepState } : item))
-+ prev.map(item => (item.id === id ? { ...item, keep_forever: keepState } : item))
-```
+`Home.tsx` now calls `.update({ keep_forever: keepState })` and merges `{ keep_forever: keepState }` in state.
 
 ---
 
-### 3. `monitor_results` inserts strip `monitor_id` — orphaning every row
+### ✅ 3. `monitor_results` inserts include `monitor_id` — FIXED
 
-**File:** `frontend/src/pages/Home.tsx` line 432
-
-The code deliberately strips `monitor_id` before inserting into `monitor_results`:
-```js
-.insert(payload.map(({ monitor_id, ...rest }) => rest)); // "Strictly omitting monitor_id"
-```
-But `monitor_results.monitor_id` **exists in the schema** (line 37 of `updated-supabase-schema.sql`):
-```sql
-monitor_id uuid REFERENCES public.monitors(id),
-```
-Without it, monitor results are orphaned — they cannot be associated with their parent monitor when
-queried. Additionally the Realtime subscription on `monitor_results` maps events by `monitor_id`
-(Home.tsx line 174–178), so without it monitor result cards will never update.
-
-**Fix:** Remove the `.map(({ monitor_id, ...rest }) => rest)` destructure so `monitor_id` is
-included in each inserted row:
-```diff
-- .insert(payload.map(({ monitor_id, ...rest }) => rest));
-+ .insert(payload);
-```
+The destructure that stripped `monitor_id` has been removed. The insert now calls `.insert(payload)` directly.
 
 ---
 
-### 4. `AuthDialog` imports Supabase client from wrong path
+### ✅ 4. `AuthDialog` imports Supabase client from correct path — FIXED
 
-**File:** `frontend/src/components/AuthDialog.tsx` line 12
-
-```js
-import { supabase } from "@/utils/supabaseClient";
-```
-
-The path `@/utils/supabaseClient` resolves to `frontend/src/utils/supabaseClient.ts`, which uses
-different environment variable names than the canonical client. All other components import directly
-from `@/lib/supabase`. This can cause the Supabase client to be `undefined` when the dialog opens.
-
-**Fix:**
-```diff
-- import { supabase } from "@/utils/supabaseClient";
-+ import { supabase } from "@/lib/supabase";
-```
+`AuthDialog.tsx` now imports from `@/lib/supabase` (not `@/utils/supabaseClient`).
 
 ---
 
-### 5. `delete_user` RPC fails due to foreign key violation + missing profile deletion + missing `search_path`
+### ✅ 5. `delete_user` RPC — FIXED
 
-**Files:**
-- `supabase/migrations/20260321143880_add_delete_user_rpc.sql`
-- `frontend/src/pages/Account.tsx` lines 199–229
-
-**Problem A — FK violation:** The current RPC is:
-```sql
-CREATE OR REPLACE FUNCTION delete_user()
-RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
-BEGIN
-  DELETE FROM auth.users WHERE id = auth.uid();
-END; $$;
-```
-`public.profiles` has `id uuid PRIMARY KEY REFERENCES auth.users(id)` **without** `ON DELETE CASCADE`.
-Attempting to `DELETE FROM auth.users` while a `profiles` row references it raises a foreign key
-constraint violation, causing the RPC to always fail.
-
-**Problem B — Missing `search_path`:** `SECURITY DEFINER` functions must include
-`SET search_path = public` to prevent search-path hijacking (project convention).
-
-**Problem C — Fallback leaves `auth.users` intact:** When the RPC fails, `Account.tsx` falls
-back to deleting table data but calls `supabase.auth.signOut()` without deleting `auth.users`.
-The user is signed out but can immediately sign back in to a broken, data-less account.
-The fallback also never deletes the `profiles` row.
-
-**Fix:** Replace the migration content with a corrected RPC (create a new migration
-`supabase/migrations/20260401000001_fix_delete_user_rpc.sql`):
-```sql
-CREATE OR REPLACE FUNCTION public.delete_user()
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-  v_uid uuid := auth.uid();
-BEGIN
-  -- Must delete profile first due to FK reference to auth.users
-  DELETE FROM public.profiles WHERE id = v_uid;
-  DELETE FROM public.monitors WHERE user_id = v_uid::text;
-  DELETE FROM public.user_preferences WHERE user_id = v_uid::text;
-  DELETE FROM public.dns_queries WHERE user_id = v_uid::text;
-  DELETE FROM public.benchmark_results WHERE user_id = v_uid::text;
-  DELETE FROM public.monitor_results WHERE user_id = v_uid::text;
-  -- Now safe to delete auth user
-  DELETE FROM auth.users WHERE id = v_uid;
-END;
-$$;
-```
-Also add `profiles` to the client-side fallback in `Account.tsx`:
-```diff
-  await Promise.all([
-+   supabase.from("profiles").delete().eq("id", user.id),
-    supabase.from("dns_queries").delete().eq("user_id", user.id),
-    supabase.from("benchmark_results").delete().eq("user_id", user.id),
-    supabase.from("monitor_results").delete().eq("user_id", user.id),
-    supabase.from("monitors").delete().eq("user_id", user.id),
-    supabase.from("user_preferences").delete().eq("user_id", user.id),
-  ]);
-```
+Migration `supabase/migrations/20260401000001_fix_delete_user_rpc.sql` replaces the broken RPC with a
+corrected version that deletes `profiles` first (FK), deletes `monitor_results` before `monitors` (FK),
+and sets `search_path = public`. The client-side fallback in `Account.tsx` also deletes `profiles`.
 
 ---
 
-### 6. Quad9 URL mismatch between client and server
+### ✅ 6. Quad9 URL mismatch — FIXED
 
-**Frontend:** `frontend/src/lib/doh.ts` line 29
-```js
-url: "https://dns9.quad9.net:5053/dns-query",
-```
-**Backend:** `api/dns-query.ts` line 56
-```js
-quad9: "https://dns.quad9.net/dns-query",
-```
-
-These are completely different endpoints. Client-side Quad9 benchmarks use the non-standard port
-5053 endpoint while the server-side proxy uses the standard endpoint. Results are inconsistent and
-non-comparable between client and server measurements.
-
-**Fix:**
-```diff
-# frontend/src/lib/doh.ts line 29
-- url: "https://dns9.quad9.net:5053/dns-query",
-+ url: "https://dns.quad9.net/dns-query",
-```
+`frontend/src/lib/doh.ts` now uses `https://dns.quad9.net/dns-query` (matching the server endpoint).
 
 ---
 
@@ -205,120 +74,29 @@ non-comparable between client and server measurements.
 
 ---
 
-### 7. Leaderboard shows 100% failed — Vercel cron job is never authorized
+### ✅ 7. Vercel cron authorization — FIXED
 
-**File:** `api/daily-job.ts` and `vercel.json`
-
-The global leaderboard (shown to non-logged-in users) is populated by `run_daily_job()` called via
-the Vercel cron at `0 2 * * *`. The handler requires:
-```typescript
-authHeader === `Bearer ${cronSecret}`
-```
-where `cronSecret = process.env.CRON_SECRET`.
-
-If `CRON_SECRET` is not set in the Vercel project environment variables, the handler always
-returns `401 Unauthorized`. The `leaderboard` table is never refreshed, so it either stays empty
-(users see nothing) or shows stale data from when the migration was first applied (possibly all
-zeros because no benchmark data existed yet).
-
-**Fix (two-part):**
-
-1. **Set `CRON_SECRET` in Vercel environment variables.** Vercel automatically sends
-   `Authorization: Bearer {CRON_SECRET}` on cron requests when `CRON_SECRET` is defined. Add any
-   non-empty secret string as `CRON_SECRET` in the Vercel dashboard under Settings → Environment
-   Variables.
-
-2. **Optional — allow unauthorized calls from Vercel's own cron IP range** by also accepting
-   requests with the `x-vercel-cron` request header (which Vercel adds to cron calls):
-   ```typescript
-   const isVercelCron = request.headers.get("x-vercel-cron") === "1";
-   const isAuthorized = isDev || isVercelCron || (
-     !!cronSecret && cronSecret !== "undefined" &&
-     authHeader === `Bearer ${cronSecret}`
-   );
-   ```
-   Note: The `x-vercel-cron` header is only sent by Vercel's cron scheduler and cannot be spoofed
-   from the public internet on Vercel's infrastructure.
+`api/daily-job.ts` now accepts `x-vercel-cron: 1` header in addition to Bearer token auth.
+**Action still needed:** Ensure `CRON_SECRET` is set in the Vercel dashboard → Settings →
+Environment Variables so Vercel sends it automatically with each cron call.
 
 ---
 
-### 8. Live Logs: same domain+provider entry should update, not duplicate
+### ✅ 8. Live Logs: same domain+provider entry deduplication — FIXED
 
-**File:** `frontend/src/pages/Home.tsx` line 191
-
-The Realtime subscription callback always prepends new entries:
-```typescript
-setLiveLogs(prev => [payload.new, ...prev].slice(0, 50));
-```
-When a user re-runs a benchmark for the same domain and DNS provider, a second row is added instead
-of replacing the first. For a logged-in user's personal view the list grows with stale duplicates.
-
-**Fix:** Update the existing entry for the same `domain + provider` combination if one exists;
-otherwise prepend as a new entry:
-```typescript
-payload => {
-  const newLog = payload.new;
-  setLiveLogs(prev => {
-    const existingIndex = prev.findIndex(
-      log => log.domain === newLog.domain && log.provider === newLog.provider
-    );
-    if (existingIndex !== -1) {
-      // Replace the existing entry in-place
-      const updated = [...prev];
-      updated[existingIndex] = newLog;
-      return updated;
-    }
-    // New entry: prepend and cap at 50
-    return [newLog, ...prev].slice(0, 50);
-  });
-}
-```
+`Home.tsx` now updates an existing entry (by `domain + provider`) in-place rather than prepending duplicates.
 
 ---
 
-### 9. `allQueries` never sets the `error` field — error info is always lost
+### ✅ 9. `allQueries` error field — FIXED
 
-**File:** `frontend/src/pages/Home.tsx` lines 1083–1091 and 1127
-
-When building the `allQueries` array (which feeds both `dns_queries` and `benchmark_results` inserts),
-the `error` field is never set, so all failed queries are stored with `error: null`:
-```js
-allQueries.push({
-  user_id: userId,
-  domain,
-  provider: provider.name,
-  latency_ms: final_success ? final_latency : null,
-  success: final_success,
-  tested_at: new Date().toISOString(),
-  method: final_method,
-  // ← error field missing
-});
-```
-But on line 1127 the code reads `q.error || null`, which is always `null`.
-
-**Fix:** Add the `error` field to the `allQueries.push()` call:
-```diff
-  method: final_method,
-+ error: final_success ? null : "Failed to resolve",
-});
-```
+`allQueries.push()` now sets `error: final_success ? null : "Failed to resolve"`.
 
 ---
 
-### 10. Monitors always save all providers instead of the user's selection
+### ✅ 10. Monitors save only the user's selected providers — FIXED
 
-**File:** `frontend/src/pages/Home.tsx` lines 515 and 525
-
-When creating or updating a monitor, the code saves `userProviders.map(p => p.name)` — i.e.
-**all** active providers — rather than only the providers the user selected for that monitor.
-This means every monitor always tests all providers regardless of the monitor configuration form.
-
-**Fix:** Add a `selectedMonitorProviders` state to the monitor creation form (a multi-select or
-checkbox list) and save only those values:
-```diff
-- providers: userProviders.map(p => p.name),
-+ providers: selectedMonitorProviders,   // user's per-monitor selection
-```
+`Home.tsx` now has `selectedMonitorProviders` state and saves `providers: selectedMonitorProviders`.
 
 ---
 
@@ -326,93 +104,30 @@ checkbox list) and save only those values:
 
 ---
 
-### 11. `measureDoH` and `measureDoHBatch` are imported but never called
+### ✅ 11. Unused `measureDoH`/`measureDoHBatch` imports removed — FIXED
 
-**File:** `frontend/src/pages/Home.tsx` lines 24 and 63
-
-```js
-import {
-  measureDoH,        // ← never used
-  measureClientDoH,
-  ...
-} from "@/lib/doh";
-import { measureDoHBatch } from "@/lib/doh";  // ← never used
-```
-
-Only `measureClientDoH` is actually called. The unused imports add confusion about which function
-runs the benchmark.
-
-**Fix:** Remove both unused imports:
-```diff
-  import {
--   measureDoH,
-    measureClientDoH,
-    DOH_PROVIDERS,
-    BenchmarkResult,
-  } from "@/lib/doh";
-- import { measureDoHBatch } from "@/lib/doh";
-```
+`Home.tsx` now only imports `measureClientDoH`, `DOH_PROVIDERS`, and `BenchmarkResult` from `@/lib/doh`.
 
 ---
 
-### 12. `monitor_results` inserts don't record `record_type`
+### ✅ 12. `monitor_results` now includes `record_type` — FIXED
 
-**File:** `frontend/src/pages/Home.tsx` lines 394–425 (the monitor payload building block)
-
-The `monitor_results` schema includes a `record_type` column (inherited from the dns_queries
-pattern), but the payload object never sets it. All monitor records end up with a null
-`record_type`, making it impossible to distinguish A from AAAA tests in history.
-
-**Fix:** Add `record_type: "A"` to the monitor result payload (or make the monitor form let users
-choose the record type and store it on the `monitors` table):
-```diff
-  payload.push({
-    user_id: user.id,
-    domain,
-    provider: isCustom ? (provider.url || "custom") : provider.name,
-    latency_ms: success ? latency : null,
-    success,
-    method: method || "failed",
-    error: success ? null : "Failed to resolve",
-    tested_at: testedAt,
-    keep_forever: false,
-    monitor_id: monitor.id,
-+   record_type: "A",
-  });
-```
+Monitor payload now sets `record_type: "A"`.
 
 ---
 
-### 13. `BenchmarkTab` chart filters providers twice inconsistently
+### ✅ 13. `BenchmarkTab` chart uses `filteredChartData` — FIXED
 
-**File:** `frontend/src/pages/tabs/BenchmarkTab.tsx`
-
-`chartData` is computed for all providers, but the `<Bar>` components for inactive providers are
-still rendered (just filtered again in the render expression). Any provider not in `activeProviders`
-may still produce a bar entry in `chartData` that shows up incorrectly.
-
-**Fix:** Apply the `activeProviders` filter when computing `chartData` so that inactive providers
-are excluded at the data layer, not just the rendering layer.
+`BenchmarkTab.tsx` computes `filteredChartData` by stripping inactive providers from each row and
+passes that to the chart instead of raw `chartData`. `<Bar>` components are still rendered only for
+`activeProviders`.
 
 ---
 
-### 14. `monitor.providers` format is inconsistent — may be stored as CSV string
+### ✅ 14. `monitor.providers` stored as JSONB — FIXED
 
-**File:** `frontend/src/pages/Home.tsx` lines 461–470
-
-When loading monitors from the database, the code defensively handles both an array and a
-comma-separated string:
-```js
-const providers = Array.isArray(monitor.providers)
-  ? monitor.providers
-  : (monitor.providers as string).split(",").map(s => s.trim());
-```
-But when saving monitors (lines 515, 525) only the array form is written. If old data exists in
-CSV form it will cause display issues.
-
-**Fix:** Ensure the `monitors.providers` column in the schema is typed as `jsonb` (not `text`),
-and run a one-time migration to convert any legacy CSV rows to a proper JSON array. Remove the CSV
-fallback once the migration is confirmed.
+Migration `supabase/migrations/20260321143882_convert_monitor_providers.sql` converts the
+`monitors.providers` column to `jsonb` and coerces any legacy CSV rows.
 
 ---
 
@@ -420,38 +135,243 @@ fallback once the migration is confirmed.
 
 ---
 
-### 15. `frontend/src/lib/monitor.ts` is an empty file
+### ✅ 15. `frontend/src/lib/monitor.ts` — NOT AN ISSUE
 
-**File:** `frontend/src/lib/monitor.ts`
-
-The file exists but contains no code. All monitor logic lives in `Home.tsx`. Either populate this
-file with the monitor helper functions (to keep `Home.tsx` maintainable) or delete it.
+The file does not exist in the current codebase. No action needed.
 
 ---
 
-### 16. No frontend validation for custom DNS URL before saving
+### ✅ 16. Frontend URL validation for custom DNS — FIXED
 
-**File:** `frontend/src/pages/tabs/SettingsTab.tsx`
-
-Users can enter any string as a custom DoH URL. The backend validates it (using
-`validateCustomUrl()` in `api/dns-query.ts`), but the frontend doesn't show an error until the
-user runs a benchmark.
-
-**Fix:** Import and call the same `validateCustomUrl()` logic (or an equivalent regex/URL check)
-client-side when the user clicks "Save" in SettingsTab, and show an inline validation error if
+`SettingsTab.tsx` now calls `validateCustomUrl()` when saving and shows an inline error toast if
 the URL is invalid.
 
 ---
 
-### 17. `allQueries` doesn't include `record_type` — the column exists in `dns_queries`
+### ✅ 17. `allQueries` includes `record_type` — FIXED
 
-**File:** `frontend/src/pages/Home.tsx` lines 1083–1091
+`allQueries.push()` now sets `record_type: "A"`.
 
-The `dns_queries` table has a `record_type` column (schema line 54), but `allQueries.push()` never
-sets it.
+---
 
-**Fix:** Add `record_type: "A"` (or the actual record type selected by the user) to the
-`allQueries.push()` call.
+## NEW BUGS — OPEN (Jules must fix these)
+
+---
+
+### 🔴 18. `run_daily_job()` crashes — references non-existent `keep` column in `dns_queries`
+
+**Files:** `supabase/migrations/20260321143865_add_method_statistics.sql` (line 15) and
+`supabase/migrations/20260321143870_add_stability_metrics.sql` (line 13)
+
+Both migrations define `run_daily_job()` with the following cleanup statement:
+```sql
+DELETE FROM dns_queries
+WHERE tested_at < NOW() - INTERVAL '30 days'
+AND keep = false        -- ← this column does NOT exist
+AND is_kept = false;
+```
+
+No migration ever adds a `keep` column to `dns_queries`. The `updated-supabase-schema.sql` shows both
+`keep` and `is_kept` columns, but that file is only a reference snapshot; the live database was
+populated through migrations. As a result, `run_daily_job()` fails with:
+```
+ERROR:  column "keep" does not exist
+```
+every time the Vercel cron fires or when a user triggers a leaderboard refresh.
+The PostgreSQL exception aborts the entire function body, so the `DELETE FROM leaderboard` and the
+following `INSERT INTO leaderboard` never execute.  **The global leaderboard table is never refreshed.**
+
+**Fix (use Supabase MCP to apply):**
+
+1. Verify with Supabase MCP whether `dns_queries` has a `keep` column:
+   ```sql
+   SELECT column_name FROM information_schema.columns
+   WHERE table_name = 'dns_queries' AND column_name = 'keep';
+   ```
+
+2. If the column is missing, create a new migration
+   `supabase/migrations/20260402000000_fix_run_daily_job.sql` with a corrected
+   `run_daily_job()` that removes `AND keep = false`:
+   ```sql
+   CREATE OR REPLACE FUNCTION public.run_daily_job()
+   RETURNS void
+   LANGUAGE plpgsql
+   SECURITY DEFINER
+   SET search_path = public
+   AS $$
+   BEGIN
+       -- 1. Delete old raw DNS query logs
+       DELETE FROM public.dns_queries
+       WHERE tested_at < NOW() - INTERVAL '30 days'
+       AND is_kept = false;
+
+       DELETE FROM public.monitor_results
+       WHERE tested_at < NOW() - INTERVAL '30 days'
+       AND keep_forever = false;
+
+       -- 2. Recompute leaderboard from last 30 days of benchmark + monitor data
+       DELETE FROM public.leaderboard;
+
+       WITH combined_results AS (
+           SELECT provider, latency_ms, success, method, tested_at
+           FROM public.benchmark_results
+           WHERE tested_at >= NOW() - INTERVAL '30 days'
+           UNION ALL
+           SELECT provider, latency_ms, success, method, tested_at
+           FROM public.monitor_results
+           WHERE tested_at >= NOW() - INTERVAL '30 days'
+       ),
+       aggregated AS (
+           SELECT
+               provider,
+               AVG(latency_ms) FILTER (WHERE success = true) AS avg_latency,
+               STDDEV(latency_ms) FILTER (WHERE success = true) AS latency_stddev,
+               SUM(CASE WHEN success THEN 1 ELSE 0 END)::FLOAT / COUNT(*) AS success_rate,
+               COUNT(*) AS sample_count,
+               (
+                   (SUM(CASE WHEN success THEN 1 ELSE 0 END)::FLOAT / COUNT(*) * 0.5) +
+                   ((1.0 / NULLIF(AVG(latency_ms) FILTER (WHERE success = true), 0)) * 0.3) +
+                   (LOG(COUNT(*) + 1) * 0.2)
+               ) AS score,
+               (
+                   (SUM(CASE WHEN success THEN 1 ELSE 0 END)::FLOAT / COUNT(*) * 0.6) +
+                   ((1.0 / NULLIF(AVG(latency_ms) FILTER (WHERE success = true), 0)) * 0.25) +
+                   (LOG(COUNT(*) + 1) * 0.15)
+               ) AS reliability_score,
+               SUM(CASE WHEN method = 'server-udp' THEN 1 ELSE 0 END)::FLOAT / COUNT(*) * 100 AS udp_percentage,
+               SUM(CASE WHEN method = 'server-doh' THEN 1 ELSE 0 END)::FLOAT / COUNT(*) * 100 AS doh_percentage,
+               SUM(CASE WHEN method = 'fallback' THEN 1 ELSE 0 END)::FLOAT / COUNT(*) * 100 AS fallback_percentage,
+               SUM(CASE WHEN method = 'failed' OR success = false THEN 1 ELSE 0 END)::FLOAT / COUNT(*) * 100 AS failure_percentage,
+               NOW() AS last_updated
+           FROM combined_results
+           GROUP BY provider
+       )
+       INSERT INTO public.leaderboard (
+           provider, avg_latency, latency_stddev, success_rate, sample_count,
+           score, reliability_score,
+           udp_percentage, doh_percentage, fallback_percentage, failure_percentage,
+           stability_status, last_updated
+       )
+       SELECT
+           provider, avg_latency, latency_stddev, success_rate, sample_count,
+           score, reliability_score,
+           udp_percentage, doh_percentage, fallback_percentage, failure_percentage,
+           CASE
+               WHEN failure_percentage > 20 OR fallback_percentage > 30 OR latency_stddev > 50 THEN 'Unreliable'
+               WHEN failure_percentage > 10 OR fallback_percentage > 15 OR latency_stddev > 25 THEN 'Unstable'
+               ELSE 'Stable'
+           END AS stability_status,
+           last_updated
+       FROM aggregated;
+
+       -- 3. Store daily summary
+       WITH daily AS (
+           SELECT provider, latency_ms, success
+           FROM public.benchmark_results
+           WHERE tested_at >= CURRENT_DATE - INTERVAL '1 day' AND tested_at < CURRENT_DATE
+           UNION ALL
+           SELECT provider, latency_ms, success
+           FROM public.monitor_results
+           WHERE tested_at >= CURRENT_DATE - INTERVAL '1 day' AND tested_at < CURRENT_DATE
+       )
+       INSERT INTO public.daily_stats (date, provider, avg_latency, success_rate, sample_count)
+       SELECT
+           (CURRENT_DATE - INTERVAL '1 day')::DATE,
+           provider,
+           AVG(latency_ms) FILTER (WHERE success = true),
+           SUM(CASE WHEN success THEN 1 ELSE 0 END)::FLOAT / COUNT(*),
+           COUNT(*)
+       FROM daily
+       GROUP BY provider
+       ON CONFLICT (date, provider) DO UPDATE SET
+           avg_latency = EXCLUDED.avg_latency,
+           success_rate = EXCLUDED.success_rate,
+           sample_count = EXCLUDED.sample_count;
+   END;
+   $$;
+   ```
+
+3. After applying, trigger it manually via the Supabase MCP to verify it runs without error:
+   ```sql
+   SELECT public.run_daily_job();
+   ```
+   Then check the `leaderboard` table has rows with non-null `avg_latency` (assuming there is
+   recent benchmark data).
+
+---
+
+### 🟡 19. All benchmarks record `success=false, method="failed"` — leaderboard shows 100% failure
+
+**Symptoms visible in the live app:**
+- The personal Leaderboard tab ("Your DNS Performance") shows every provider with `N/A ms` latency,
+  `0.0%` success rate, and `Failed: 100.0%` in method stats despite having 197–204 total test records.
+- This means every row in `dns_queries` for the current user has `success=false, method="failed"`.
+- The global leaderboard (visible when not logged in) is also stale because `run_daily_job()` was
+  broken (bug 18 above).
+
+**Root cause investigation steps for Jules:**
+
+1. **Check if `benchmark_results` / `dns_queries` have any successful rows** using Supabase MCP:
+   ```sql
+   SELECT provider, COUNT(*) AS total,
+          SUM(CASE WHEN success THEN 1 ELSE 0 END) AS successes,
+          COUNT(DISTINCT method) AS distinct_methods
+   FROM public.benchmark_results
+   GROUP BY provider
+   ORDER BY provider;
+   ```
+   If `successes = 0` for every provider, the server-side DNS resolution is failing.
+
+2. **Check Vercel function logs** for `/api/dns-query` to see if UDP or DoH requests are timing out
+   or throwing errors. Look for `ERROR` or `timeout` in logs from the last benchmark run.
+
+3. **Likely cause A — UDP port 53 blocked in Vercel serverless:**
+   `api/dns-query.ts` first tries `dns.Resolver` (UDP) for each query. In many cloud environments
+   outbound UDP on port 53 is blocked, causing `resolveWithNativeDNS` to always hit the 2500ms
+   timeout. Then it falls through to DoH via HTTPS. If DoH ALSO times out (or fails), the function
+   returns `success: false, method: "failed"`.
+
+   **Fix A:** In `api/dns-query.ts`, reduce the UDP timeout from 2500 ms to 500 ms so that UDP
+   failures are detected quickly and the DoH fallback gets more of the available budget:
+   ```diff
+   - const nativeLatency = await resolveWithNativeDNS(domain, udpIp, 2500, recordType);
+   + const nativeLatency = await resolveWithNativeDNS(domain, udpIp, 500, recordType);
+   ```
+   Also increase `REQUEST_TIMEOUT` for DoH to give HTTPS more room:
+   ```diff
+   - const REQUEST_TIMEOUT = 2500; // ms
+   + const REQUEST_TIMEOUT = 4000; // ms
+   ```
+   And raise `GLOBAL_TIMEOUT` slightly so the second chunk isn't cut off:
+   ```diff
+   - const GLOBAL_TIMEOUT = 4500; // ms
+   + const GLOBAL_TIMEOUT = 8000; // ms
+   ```
+   And raise `maxDuration` in `dns-query.ts` to match:
+   ```diff
+   + export const maxDuration = 15; // seconds
+   ```
+
+4. **Likely cause B — client-side DoH fallback timeout too short:**
+   `frontend/src/lib/doh.ts` `resolveClientDNS` aborts after 2000 ms. The `fetchWithTimeout`
+   inside it also uses 2000 ms. On a slow connection or with a slow DoH server, both timeouts fire
+   before a response arrives.
+
+   **Fix B:** Increase the client-side timeout in `resolveClientDNS`:
+   ```diff
+   - const timeoutId = setTimeout(() => controller.abort(), 2000);
+   + const timeoutId = setTimeout(() => controller.abort(), 5000);
+   ```
+   And in `fetchWithTimeout` calls inside `jsonQuery`, `binaryGetQuery`, `binaryPostQuery`:
+   ```diff
+   - await fetchWithTimeout(url.toString(), { ... });
+   + await fetchWithTimeout(url.toString(), { ... }, 4000);
+   ```
+   (The third argument to `fetchWithTimeout` is `timeoutMs`, defaulting to 2000.)
+
+5. **After applying fixes**, trigger a test benchmark from the live app and verify that at least
+   some queries in `dns_queries` now have `success=true`. Then trigger `run_daily_job()` manually
+   and confirm the `leaderboard` table reflects real scores.
 
 ---
 
@@ -465,7 +385,8 @@ Use these when writing Supabase queries — do not guess or use aliases:
 | `monitor_results` | `keep_forever` | **not** `keep` |
 | `monitor_results` | `monitor_id` | FK to `monitors.id` — **include it** |
 | `leaderboard` | `last_updated` | **not** `updated_at` |
-| `dns_queries` | `is_kept` | retention flag |
+| `dns_queries` | `is_kept` | primary retention flag (from migrations) |
+| `dns_queries` | `keep` | also present in `updated-supabase-schema.sql` but may not exist via migrations — verify with MCP before using |
 | `dns_queries` | `record_type` | type of DNS record tested |
 
 ---
@@ -500,3 +421,5 @@ pnpm test
 - Do not upgrade dependencies.
 - Do not change the Supabase schema unless explicitly required by a fix above.
 - Do not remove existing tests; add new ones only if a test for the fixed behaviour is missing.
+- Do not guess — use the Supabase MCP to check the actual live schema before writing migrations.
+
