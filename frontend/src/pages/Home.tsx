@@ -72,6 +72,11 @@ import { SettingsTab } from "./tabs/SettingsTab";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 
 
+
+function isBenchmarkResult(result: any): result is BenchmarkResult {
+  return result && typeof result === 'object' && result !== "Error";
+}
+
 export default function Home({ tab = "benchmark" }: { tab?: string }) {
   const navigate = useNavigate();
 
@@ -393,9 +398,8 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
                 const serverSuccess =
                   serverResult && serverResult.success === true;
                 const clientSuccess =
-                  clientResult &&
-                  clientResult !== "Error" &&
-                  clientResult.successRate > 0;
+            isBenchmarkResult(clientResult) &&
+            clientResult.successRate > 0;
 
                 if (serverSuccess) {
                   final_success = true;
@@ -403,8 +407,8 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
                   final_latency = serverResult.latency;
                 } else if (clientSuccess) {
                   final_success = true;
-                  final_method = clientResult.method || "fallback";
-                  final_latency = clientResult.avgLatency;
+                  final_method = isBenchmarkResult(clientResult) ? clientResult.method || "fallback" : "fallback";
+                  final_latency = isBenchmarkResult(clientResult) ? clientResult.avgLatency : null;
                 }
 
                 payload.push({
@@ -873,7 +877,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
     );
   };
 
-  const handleTest = async () => {
+  const handleTest = async (providersToTest = userProviders) => {
     // Basic domain validation: strip protocols/paths and reject obviously invalid entries
     const VALID_DOMAIN_PATTERN =
       /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
@@ -935,7 +939,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
       Record<string, BenchmarkResult | "Error">
     > = {};
     let completed = 0;
-    const total = domains.length * userProviders.length;
+    const total = domains.length * providersToTest.length;
 
     try {
       const allQueries: any[] = [];
@@ -945,7 +949,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
         results[domain] = {};
 
         // Prepare queries for all providers for this domain
-        const queries = userProviders.map(p => {
+        const queries = providersToTest.map(p => {
           const isCustom = !DOH_PROVIDERS.some(dp => dp.name === p.name);
           return {
             domain,
@@ -976,7 +980,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
         const failedProviders = [];
 
         // First pass: identify server successes and failed providers
-        for (const provider of userProviders) {
+        for (const provider of providersToTest) {
           const isCustom = !DOH_PROVIDERS.some(dp => dp.name === provider.name);
           let serverResult = null;
           if (
@@ -1016,7 +1020,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
             try {
               const fallbackResult = await measureClientDoH(provider, domain);
               results[domain][provider.name] = fallbackResult;
-              if (fallbackResult === "Error" || fallbackResult.successRate === 0) {
+              if (!isBenchmarkResult(fallbackResult) || fallbackResult.successRate === 0) {
                 return 1; // Failed
               }
               return 0; // Success
@@ -1027,7 +1031,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
           });
 
           const fallbackFailures = await Promise.all(fallbackTasks);
-          const totalFailed = fallbackFailures.reduce((sum, current) => sum + current, 0);
+          const totalFailed = fallbackFailures.reduce<number>((sum, current) => sum + current, 0);
 
           if (totalFailed > 0) {
             toast.error(
@@ -1037,7 +1041,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
         }
 
         // Finalize results for all providers for this domain
-        for (const provider of userProviders) {
+        for (const provider of providersToTest) {
           const isCustom = !DOH_PROVIDERS.some(dp => dp.name === provider.name);
           let serverResult = null;
           if (
@@ -1063,8 +1067,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
           const serverSuccess = serverResult && serverResult.success === true;
 
           const clientSuccess =
-            clientResult &&
-            clientResult !== "Error" &&
+            isBenchmarkResult(clientResult) &&
             clientResult.successRate > 0;
 
           if (serverSuccess) {
@@ -1073,8 +1076,8 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
             final_latency = serverResult.latency;
           } else if (clientSuccess) {
             final_success = true;
-            final_method = clientResult.method || "fallback";
-            final_latency = clientResult.avgLatency;
+            final_method = isBenchmarkResult(clientResult) ? clientResult.method || "fallback" : "fallback";
+            final_latency = isBenchmarkResult(clientResult) ? clientResult.avgLatency : null;
           }
 
           allQueries.push({
