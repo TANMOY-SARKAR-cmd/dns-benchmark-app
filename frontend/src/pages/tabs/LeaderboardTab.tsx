@@ -4,6 +4,7 @@ import { isSupabaseConfigured } from "@/config/env";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export function LeaderboardTab({ user, leaderboard, userProviders, isFetchingData }: any) {
+  const sortedLeaderboard = [...(leaderboard || [])].sort((a: any, b: any) => (b.reliability_score || b.score) - (a.reliability_score || a.score));
   return (
     <Card>
       <CardHeader>
@@ -31,11 +32,11 @@ export function LeaderboardTab({ user, leaderboard, userProviders, isFetchingDat
                 <p className="font-semibold">
                   Recommended DNS:{" "}
                   <span className="text-primary">
-                    {leaderboard.sort((a: any, b: any) => (b.reliability_score || b.score) - (a.reliability_score || a.score))[0]?.provider}
+                    {sortedLeaderboard[0]?.provider}
                   </span>{" "}
                   (Score:{" "}
-                  {leaderboard.sort((a: any, b: any) => (b.reliability_score || b.score) - (a.reliability_score || a.score))[0]?.reliability_score?.toFixed(1) ||
-                   leaderboard.sort((a: any, b: any) => (b.reliability_score || b.score) - (a.reliability_score || a.score))[0]?.score?.toFixed(1)})
+                  {sortedLeaderboard[0]?.reliability_score?.toFixed(1) ||
+                   sortedLeaderboard[0]?.score?.toFixed(1)})
                 </p>
               </div>
             )}
@@ -55,7 +56,7 @@ export function LeaderboardTab({ user, leaderboard, userProviders, isFetchingDat
                     </tr>
                   </thead>
                   <tbody>
-                    {leaderboard.sort((a: any, b: any) => (b.reliability_score || b.score) - (a.reliability_score || a.score)).map((item: any, index: number) => {
+                    {sortedLeaderboard.map((item: any, index: number) => {
                       const provider = userProviders.find((p: any) => p.name === item.provider);
                       let successColor = "text-red-500";
                       const rate = item.success_rate <= 1 ? item.success_rate * 100 : item.success_rate;

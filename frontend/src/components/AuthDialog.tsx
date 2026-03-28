@@ -9,7 +9,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { supabase } from "@/utils/supabaseClient";
+import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { LogIn, Github, Mail } from "lucide-react";
 import { DiscordLogoIcon } from "@radix-ui/react-icons";

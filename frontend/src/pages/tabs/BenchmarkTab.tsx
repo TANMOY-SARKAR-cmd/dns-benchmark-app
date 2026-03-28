@@ -45,6 +45,14 @@ export function BenchmarkTab({
     handleTest(filteredProviders);
   };
 
+  const filteredChartData = chartData.map((item: any) => {
+    const filtered: any = { domain: item.domain };
+    activeProviders.forEach((p: string) => {
+      if (p in item) filtered[p] = item[p];
+    });
+    return filtered;
+  });
+
   return (
     <div className="space-y-8">
       {user && personalBest && (
@@ -202,7 +210,7 @@ export function BenchmarkTab({
                 <div className="h-[400px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart
-                      data={chartData}
+                      data={filteredChartData}
                       margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
                     >
                       <CartesianGrid strokeDasharray="3 3" opacity={0.2} />

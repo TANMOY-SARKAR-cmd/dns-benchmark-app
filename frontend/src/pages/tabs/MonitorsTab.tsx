@@ -1,12 +1,16 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Globe, Server, Clock, History, Play, Square, Trash2, Activity, AlertCircle } from "lucide-react";
+import { Globe, Server, Clock, History, Play, Square, Trash2, Activity, AlertCircle, Edit } from "lucide-react";
 import { isSupabaseConfigured } from "@/config/env";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
 
 export function MonitorsTab({
+  editingMonitorId,
+  userProviders,
+  selectedMonitorProviders,
+  setSelectedMonitorProviders,
   user,
   monitors,
   monitorResults,
@@ -18,6 +22,7 @@ export function MonitorsTab({
   setMonitorInterval,
   toggleMonitor,
   handleDeleteMonitor,
+  handleEditMonitor,
   isFetchingData
 }: any) {
   return (
@@ -76,8 +81,31 @@ export function MonitorsTab({
                     </select>
                   </div>
                   <Button type="submit" disabled={isCreatingMonitor} className="w-full mt-2">
-                    Create Monitor
+                    {isCreatingMonitor ? "Saving..." : (editingMonitorId ? "Update Monitor" : "Create Monitor")}
                   </Button>
+
+                </div>
+              </div>
+              <div className="mt-4">
+                <label className="text-sm font-medium mb-2 block">Providers to test</label>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {userProviders.map((provider: any) => (
+                    <label key={provider.name} className="flex items-center space-x-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedMonitorProviders.includes(provider.name)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedMonitorProviders([...selectedMonitorProviders, provider.name]);
+                          } else {
+                            setSelectedMonitorProviders(selectedMonitorProviders.filter((p: string) => p !== provider.name));
+                          }
+                        }}
+                        className="rounded border-slate-300 dark:border-slate-700"
+                      />
+                      <span>{provider.name}</span>
+                    </label>
+                  ))}
                 </div>
               </div>
             </form>
@@ -115,6 +143,14 @@ export function MonitorsTab({
                           </div>
                         </div>
                         <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleEditMonitor(monitor)}
+                            title="Edit Monitor"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"
