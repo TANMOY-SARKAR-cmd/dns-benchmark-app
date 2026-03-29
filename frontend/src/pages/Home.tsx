@@ -1165,6 +1165,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
 
         fetchLeaderboard();
         fetchHistory();
+        fetchPersonalBest();
       }
     } catch (error) {
       toast.error("An error occurred during benchmarking");
