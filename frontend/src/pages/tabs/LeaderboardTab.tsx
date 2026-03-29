@@ -3,6 +3,12 @@ import { Trophy, AlertCircle } from "lucide-react";
 import { isSupabaseConfigured } from "@/config/env";
 import { Skeleton } from "@/components/ui/skeleton";
 
+
+function safeNumber(value: any, digits = 2) {
+  if (value === null || value === undefined || isNaN(value)) return "N/A";
+  return Number(value).toFixed(digits);
+}
+
 export function LeaderboardTab({ user, leaderboard, userProviders, isFetchingData }: any) {
   const sortedLeaderboard = [...(leaderboard || [])].sort((a: any, b: any) => (b.reliability_score || b.score) - (a.reliability_score || a.score));
   return (
@@ -35,8 +41,8 @@ export function LeaderboardTab({ user, leaderboard, userProviders, isFetchingDat
                     {sortedLeaderboard[0]?.provider}
                   </span>{" "}
                   (Score:{" "}
-                  {sortedLeaderboard[0]?.reliability_score?.toFixed(1) ||
-                   sortedLeaderboard[0]?.score?.toFixed(1)})
+                  {safeNumber(sortedLeaderboard[0]?.reliability_score, 1) ||
+                   safeNumber(sortedLeaderboard[0]?.score, 1)})
                 </p>
               </div>
             )}
@@ -79,12 +85,12 @@ export function LeaderboardTab({ user, leaderboard, userProviders, isFetchingDat
                             {item.avg_latency === null || isNaN(item.avg_latency) ? "N/A" : Math.round(item.avg_latency)} ms
                           </td>
                           <td className={`px-4 py-3 font-medium ${successColor}`}>
-                            {item.success_rate === null || isNaN(item.success_rate) ? "N/A" : item.success_rate <= 1 ? (item.success_rate * 100).toFixed(1) : item.success_rate.toFixed(1)}%
+                            {item.success_rate === null || isNaN(item.success_rate) ? "N/A" : item.success_rate <= 1 ? safeNumber(item.success_rate * 100, 1) : safeNumber(item.success_rate, 1)}%
                           </td>
                           <td className="px-4 py-3 font-black text-primary">
                             {item.reliability_score === null || item.reliability_score === undefined || isNaN(item.reliability_score)
-                              ? item.score === null || isNaN(item.score) ? "0.0" : item.score.toFixed(1)
-                              : item.reliability_score.toFixed(1)}
+                              ? item.score === null || isNaN(item.score) ? "0.0" : safeNumber(item.score, 1)
+                              : safeNumber(item.reliability_score, 1)}
                           </td>
                           <td className="px-4 py-3 text-slate-500">{item.sample_count || item.total_tests || 0}</td>
                           <td className="px-4 py-3 text-center">
@@ -105,10 +111,10 @@ export function LeaderboardTab({ user, leaderboard, userProviders, isFetchingDat
                           <td className="px-4 py-3 text-xs space-y-1">
                             {item.udp_percentage !== undefined && (
                               <>
-                                <div className="flex justify-between w-32"><span className="text-slate-500">UDP:</span><span className="font-medium text-blue-500">{item.udp_percentage.toFixed(1)}%</span></div>
-                                <div className="flex justify-between w-32"><span className="text-slate-500">DoH:</span><span className="font-medium text-indigo-500">{item.doh_percentage.toFixed(1)}%</span></div>
-                                <div className="flex justify-between w-32"><span className="text-slate-500">Fallback:</span><span className="font-medium text-orange-500">{item.fallback_percentage.toFixed(1)}%</span></div>
-                                <div className="flex justify-between w-32"><span className="text-slate-500">Failed:</span><span className="font-medium text-red-500">{item.failure_percentage.toFixed(1)}%</span></div>
+                                <div className="flex justify-between w-32"><span className="text-slate-500">UDP:</span><span className="font-medium text-blue-500">{safeNumber(item.udp_percentage, 1)}%</span></div>
+                                <div className="flex justify-between w-32"><span className="text-slate-500">DoH:</span><span className="font-medium text-indigo-500">{safeNumber(item.doh_percentage, 1)}%</span></div>
+                                <div className="flex justify-between w-32"><span className="text-slate-500">Fallback:</span><span className="font-medium text-orange-500">{safeNumber(item.fallback_percentage, 1)}%</span></div>
+                                <div className="flex justify-between w-32"><span className="text-slate-500">Failed:</span><span className="font-medium text-red-500">{safeNumber(item.failure_percentage, 1)}%</span></div>
                               </>
                             )}
                           </td>
