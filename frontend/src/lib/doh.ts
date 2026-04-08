@@ -89,7 +89,7 @@ type MethodResult = {
   verified: boolean;
 };
 
-async function jsonQuery(
+export async function jsonQuery(
   provider: DoHProvider,
   domain: string,
   recordType: "A" | "AAAA" = "A"
