@@ -5,10 +5,7 @@ DROP VIEW IF EXISTS public.leaderboard;
 CREATE OR REPLACE VIEW public.leaderboard AS
 SELECT
     provider,
-    CASE
-        WHEN count(*) > 0 THEN round(sum(latency_ms) / count(*), 2)
-        ELSE 0
-    END AS global_avg_ms,
+    COALESCE(round(avg(latency_ms), 2), 0) AS global_avg_ms,
     count(*) AS total_tests
 FROM public.benchmark_results
 GROUP BY provider
