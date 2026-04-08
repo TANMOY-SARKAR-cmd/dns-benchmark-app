@@ -25,6 +25,7 @@ import {
   DOH_PROVIDERS,
   BenchmarkResult,
 } from "@/lib/doh";
+import { LeaderboardItem } from "@/types";
 import { supabase } from "@/lib/supabase";
 import { isSupabaseConfigured, ENV } from "@/config/env";
 import {
@@ -104,7 +105,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
 
 
   // Leaderboard & History
-  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardItem[]>([]);
   const [customName, setCustomName] = useState("");
   const [customUrl, setCustomUrl] = useState("");
   const [customFormat, setCustomFormat] = useState<"json" | "binary">("json");
@@ -727,7 +728,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
 
   const fetchLeaderboard = async () => {
     try {
-      let dataToProcess = [];
+      let dataToProcess: LeaderboardItem[] = [];
 
       if (user) {
         // Fetch personal performance from dns_queries
@@ -831,7 +832,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
       }
 
       // Calculate personal score if needed, global comes with score
-      const processedLeaderboard = dataToProcess.map((item: any) => {
+      const processedLeaderboard = dataToProcess.map((item: LeaderboardItem) => {
         if (item.score !== undefined) {
           return item;
         }
