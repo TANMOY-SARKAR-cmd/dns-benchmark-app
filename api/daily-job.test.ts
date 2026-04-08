@@ -98,4 +98,22 @@ describe('daily-job handler authorization', () => {
     // The key is that it's NOT 401.
     expect(response.status).not.toBe(401);
   });
+
+  it('should block access even with x-vercel-cron header (vulnerability fix)', async () => {
+    process.env.IS_DEV = "false";
+    process.env.CRON_SECRET = "secure-secret";
+
+    const request = new Request('http://localhost/api/daily-job', {
+      method: 'POST',
+      headers: {
+        'x-vercel-cron': '1',
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const response = await handler(request);
+
+    // After fix, this should now return 401 Unauthorized
+    expect(response.status).toBe(401);
+  });
 });
