@@ -89,7 +89,7 @@ type MethodResult = {
   verified: boolean;
 };
 
-async function jsonQuery(
+export async function jsonQuery(
   provider: DoHProvider,
   domain: string,
   recordType: "A" | "AAAA" = "A"
@@ -503,7 +503,7 @@ export async function measureDoHBatch(
 
   // Only run fallback for domains that were NOT successful on the server
   const missingDomains = domains.filter(d => !results[d] || results[d].successRate === 0);
-  for (const domain of missingDomains) {
+  await Promise.all(missingDomains.map(async (domain) => {
     try {
       const fallbackResult = await measureDoH(provider, domain, retries, recordType);
       if (fallbackResult && fallbackResult.method !== "failed") {
@@ -533,7 +533,7 @@ export async function measureDoHBatch(
           method: "failed",
       };
     }
-  }
+  }));
 
   return results;
 }

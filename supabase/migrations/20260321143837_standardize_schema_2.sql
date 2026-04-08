@@ -35,10 +35,30 @@ BEGIN
     ALTER TABLE public.dns_queries ADD COLUMN error text;
   END IF;
 
+  -- Rename latency to latency_ms in dns_queries
+  IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='dns_queries' and column_name='latency') THEN
+    ALTER TABLE public.dns_queries RENAME COLUMN latency TO latency_ms;
+  END IF;
+
+  -- Rename timestamp to tested_at in dns_queries
+  IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='dns_queries' and column_name='timestamp') THEN
+    ALTER TABLE public.dns_queries RENAME COLUMN timestamp TO tested_at;
+  END IF;
+
   -- Same for benchmark_results? It has provider, latency_ms already.
   -- Add method if method_used exists
   IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='benchmark_results' and column_name='method_used') THEN
     ALTER TABLE public.benchmark_results RENAME COLUMN method_used TO method;
+  END IF;
+
+  -- Rename latency to latency_ms in benchmark_results
+  IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='benchmark_results' and column_name='latency') THEN
+    ALTER TABLE public.benchmark_results RENAME COLUMN latency TO latency_ms;
+  END IF;
+
+  -- Rename timestamp to tested_at in benchmark_results
+  IF EXISTS(SELECT * FROM information_schema.columns WHERE table_name='benchmark_results' and column_name='timestamp') THEN
+    ALTER TABLE public.benchmark_results RENAME COLUMN timestamp TO tested_at;
   END IF;
 
 END $$;
