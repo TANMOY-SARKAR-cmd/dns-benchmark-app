@@ -25,6 +25,7 @@ import {
   DOH_PROVIDERS,
   BenchmarkResult,
 } from "@/lib/doh";
+import { LeaderboardItem } from "@/types";
 import { supabase } from "@/lib/supabase";
 import { isSupabaseConfigured, ENV } from "@/config/env";
 import {
@@ -104,7 +105,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
 
 
   // Leaderboard & History
-  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardItem[]>([]);
   const [customName, setCustomName] = useState("");
   const [customUrl, setCustomUrl] = useState("");
   const [customFormat, setCustomFormat] = useState<"json" | "binary">("json");
@@ -278,6 +279,11 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
             const payload: any[] = [];
             const results: Record<string, Record<string, any>> = {};
 
+            const providerMap = new Map();
+            for (const p of DOH_PROVIDERS) providerMap.set(p.name, p);
+            for (const p of userProviders) providerMap.set(p.name, p);
+            const defaultNames = new Set(DOH_PROVIDERS.map((p: any) => p.name));
+
             for (const domain of monitor.domains) {
               results[domain] = {};
             }
@@ -286,14 +292,10 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
             const queries: any[] = [];
             for (const domain of monitor.domains) {
               for (const providerName of monitor.providers) {
-                const provider =
-                  userProviders.find((p: any) => p.name === providerName) ||
-                  DOH_PROVIDERS.find((p: any) => p.name === providerName);
+                const provider = providerMap.get(providerName);
                 if (!provider) continue;
 
-                const isCustom = !DOH_PROVIDERS.some(
-                  (dp: any) => dp.name === provider.name
-                );
+                const isCustom = !defaultNames.has(provider.name);
                 queries.push({
                   domain,
                   provider: isCustom ? "custom" : provider.key,
@@ -325,14 +327,10 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
               const failedProviders: any[] = [];
 
               for (const providerName of monitor.providers) {
-                const provider =
-                  userProviders.find((p: any) => p.name === providerName) ||
-                  DOH_PROVIDERS.find((p: any) => p.name === providerName);
+                const provider = providerMap.get(providerName);
                 if (!provider) continue;
 
-                const isCustom = !DOH_PROVIDERS.some(
-                  (dp: any) => dp.name === provider.name
-                );
+                const isCustom = !defaultNames.has(provider.name);
                 let serverResult = null;
                 if (
                   batchData &&
@@ -386,14 +384,10 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
             for (const domain of monitor.domains) {
               // Finalize results for all providers for this domain
               for (const providerName of monitor.providers) {
-                const provider =
-                  userProviders.find((p: any) => p.name === providerName) ||
-                  DOH_PROVIDERS.find((p: any) => p.name === providerName);
+                const provider = providerMap.get(providerName);
                 if (!provider) continue;
 
-                const isCustom = !DOH_PROVIDERS.some(
-                  (dp: any) => dp.name === provider.name
-                );
+                const isCustom = !defaultNames.has(provider.name);
                 let serverResult = null;
                 if (
                   batchData &&
@@ -727,7 +721,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
 
   const fetchLeaderboard = async () => {
     try {
-      let dataToProcess = [];
+      let dataToProcess: LeaderboardItem[] = [];
 
       if (user) {
         // Fetch personal performance from dns_queries
@@ -831,7 +825,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
       }
 
       // Calculate personal score if needed, global comes with score
-      const processedLeaderboard = dataToProcess.map((item: any) => {
+      const processedLeaderboard = dataToProcess.map((item: LeaderboardItem) => {
         if (item.score !== undefined) {
           return item;
         }
@@ -965,6 +959,8 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
     let completed = 0;
     const total = domains.length * providersToTest.length;
 
+    const defaultNames = new Set(DOH_PROVIDERS.map((p: any) => p.name));
+
     try {
       const allQueries: any[] = [];
 
@@ -974,7 +970,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
 
         // Prepare queries for all providers for this domain
         const queries = providersToTest.map(p => {
-          const isCustom = !DOH_PROVIDERS.some(dp => dp.name === p.name);
+          const isCustom = !defaultNames.has(p.name);
           return {
             domain,
             provider: isCustom ? "custom" : p.key,
@@ -1005,7 +1001,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
 
         // First pass: identify server successes and failed providers
         for (const provider of providersToTest) {
-          const isCustom = !DOH_PROVIDERS.some(dp => dp.name === provider.name);
+          const isCustom = !defaultNames.has(provider.name);
           let serverResult = null;
           if (
             batchData &&
@@ -1066,7 +1062,7 @@ export default function Home({ tab = "benchmark" }: { tab?: string }) {
 
         // Finalize results for all providers for this domain
         for (const provider of providersToTest) {
-          const isCustom = !DOH_PROVIDERS.some(dp => dp.name === provider.name);
+          const isCustom = !defaultNames.has(provider.name);
           let serverResult = null;
           if (
             batchData &&

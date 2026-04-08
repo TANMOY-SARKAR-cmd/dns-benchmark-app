@@ -58,3 +58,69 @@ describe('validateCustomUrl', () => {
     });
   });
 });
+
+describe('POST handler', () => {
+  it('should reject requests without application/json Content-Type', async () => {
+    const { POST } = await import('./dns-query');
+    const req = new Request('http://localhost/api/dns-query', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain',
+      },
+      body: 'invalid',
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data).toEqual({ error: 'Content-Type must be application/json' });
+  });
+
+  it('should reject requests with invalid JSON body', async () => {
+    const { POST } = await import('./dns-query');
+    const req = new Request('http://localhost/api/dns-query', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: '{ invalid: json }',
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data).toEqual({ error: 'Invalid JSON body' });
+  });
+
+  it('should reject requests with non-object JSON body', async () => {
+    const { POST } = await import('./dns-query');
+    const req = new Request('http://localhost/api/dns-query', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: '[]',
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data).toEqual({ error: 'Request body must be a JSON object' });
+  });
+
+  it('should reject requests with missing required payload structure', async () => {
+    const { POST } = await import('./dns-query');
+    const req = new Request('http://localhost/api/dns-query', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ other: 'field' }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data).toEqual({ error: 'Body must contain { domain, provider } or { queries: [...] }' });
+  });
+});

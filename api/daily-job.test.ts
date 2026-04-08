@@ -47,6 +47,40 @@ describe('daily-job handler authorization', () => {
     expect(response.status).toBe(401);
   });
 
+  it('should deny access when x-vercel-cron header is present but no valid secret', async () => {
+    process.env.CRON_SECRET = 'super-secret';
+    process.env.IS_DEV = "false";
+
+    const request = new Request('http://localhost/api/daily-job', {
+      method: 'POST',
+      headers: {
+        'x-vercel-cron': '1',
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const response = await handler(request);
+    expect(response.status).toBe(401);
+  });
+
+  it('should not include CORS headers in the response', async () => {
+    process.env.CRON_SECRET = 'super-secret';
+    process.env.IS_DEV = "false";
+
+    const request = new Request('http://localhost/api/daily-job', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer super-secret',
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const response = await handler(request);
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull();
+    expect(response.headers.get('Access-Control-Allow-Methods')).toBeNull();
+    expect(response.headers.get('Access-Control-Allow-Headers')).toBeNull();
+  });
+
   it('should allow access in development mode without a valid secret', async () => {
     process.env.IS_DEV = "true";
     process.env.CRON_SECRET = undefined;
