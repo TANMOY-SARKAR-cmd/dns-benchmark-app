@@ -53,6 +53,24 @@ export interface LeaderboardEntry {
   last_updated: string;
 }
 
+export interface LeaderboardItem {
+  provider: string;
+  avg_latency: number | null;
+  success_rate: number;
+  score?: number;
+  reliability_score?: number;
+  udp_percentage?: number;
+  doh_percentage?: number;
+  fallback_percentage?: number;
+  failure_percentage?: number;
+  stability_status?: string;
+  jitter?: number | null;
+  total_tests?: number;
+  sample_count?: number;
+  latency_stddev?: number;
+  last_updated?: string;
+}
+
 export interface DnsQueryLog {
   id?: string;
   timestamp?: string;
